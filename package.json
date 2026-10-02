@@ -4,18 +4,23 @@
   "description": "Experimental project: evolve neural-network drivers for PolyTrack.",
   "private": true,
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\""
+    "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
+    "polytrack:fetch": "npm run build && node dist/scripts/fetch-polytrack.js",
+    "polytrack:capture": "npm run build && node dist/scripts/capture-polytrack.js",
+    "setup:polytrack": "npm run polytrack:fetch && node dist/scripts/capture-polytrack.js",
+    "verify:simulation": "npm run build && node dist/scripts/verify-simulation.js"
   },
   "engines": {
     "node": ">=20"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "playwright-core": "^1.63.0",
     "typescript": "^5.6.0"
   }
 }
