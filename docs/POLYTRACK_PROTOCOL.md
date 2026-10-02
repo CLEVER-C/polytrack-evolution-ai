@@ -251,16 +251,20 @@ All of these are inputs to the existing worker messages, so a harness has to be 
 - **Licensing caution:** PolyTrack is Kodub's proprietary game. Keep any downloaded game files out of
   this public repository (gitignored `vendor/`) and use them for personal local experimentation only.
 
-## 15. Open questions (must be answered before implementation)
+## 15. Open questions
 
-1. Exact behaviour of `reset=true` with and without a respawn checkpoint.
-2. Whether the car must be `StartCar`ed before inputs affect it, and how the countdown/start interacts
-   with `hasStarted` (state flag vs. worker flag).
-3. How to obtain `trackParts` / car collision data outside the browser (export once from a running
-   page vs. parse the `.glb` files ourselves).
-4. How to count total checkpoints reliably for a track.
-5. Runtime confirmation that two identical input sequences produce byte-identical CarState streams in
-   our harness (use `Verify` against a real recording as the reference test).
-6. Whether the physics WASM + worker JS can run under Node (needs `self`, `importScripts`,
-   `XMLHttpRequest`/`fetch` shims) or should run in a headless browser.
-7. Whether velocity/angular velocity can be read from WASM memory, or must be finite-differenced.
+Answers marked ✅ were established by the local setup; details and evidence are in
+[LOCAL_SIMULATION.md](LOCAL_SIMULATION.md).
+
+1. ✅ `reset=true`: no effect before any checkpoint. After one, the car respawns at the checkpoint with
+   ~zero speed; `frames` keeps counting.
+2. ✅ `StartCar` only gates the worker's JS loop. Calling `updateCarModel` directly works immediately,
+   and the CarState `hasStarted` flag is true from the first tick.
+3. ✅ Captured once from the unmodified game in headless Edge (Init message intercepted at the
+   `Worker` boundary; track inputs computed with the game's own modules).
+4. ❓ How to count total checkpoints reliably for a track.
+5. ✅ Byte-identical CarState streams across instances, processes, clocks and the game's own loop.
+   (Cross-checked against the game's non-realtime replay loop rather than `Verify`, since no
+   finishing recording is available yet.)
+6. ✅ Runs under Node in a `vm` context with small Web Worker shims; no browser needed at runtime.
+7. ❓ Whether velocity/angular velocity can be read from WASM memory, or must be finite-differenced.

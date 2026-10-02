@@ -60,9 +60,21 @@ npm run build
 
 Requires Node.js 20 or later.
 
+### Local PolyTrack simulation
+
+```bash
+npm run setup:polytrack     # download + verify PolyTrack 0.6.3 into vendor/ (gitignored), capture init data
+npm run verify:simulation   # check stepping, inputs, reset, state and deterministic replay
+```
+
+The capture step needs Microsoft Edge (or Chrome with `--channel chrome`). See
+[docs/LOCAL_SIMULATION.md](docs/LOCAL_SIMULATION.md) for how it works and the determinism results,
+and [docs/POLYTRACK_PROTOCOL.md](docs/POLYTRACK_PROTOCOL.md) for the game's simulation protocol.
+
 ## Roadmap
 
 - [x] Project structure and type contracts
+- [x] Local, deterministic PolyTrack 0.6.3 physics in Node
 - [ ] Toy simulator backend (fast, no game needed) to develop the AI against
 - [ ] Feed-forward network + agent
 - [ ] Genetic algorithm
