@@ -15,6 +15,17 @@ export interface Vec3 {
 }
 
 /**
+ * Unit quaternion rotating vehicle-local axes into world space.
+ * Vehicle-local convention: +Z forward, +Y up, +X left.
+ */
+export interface Quaternion {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly w: number;
+}
+
+/**
  * Driver inputs for one tick. Modelled as the four digital keys a player
  * presses (accelerate / brake-reverse / steer left / steer right) because that
  * is the lowest common denominator; a backend may translate these however it
@@ -35,10 +46,15 @@ export interface VehicleState {
   /** Elapsed time since the run started, in milliseconds. */
   readonly timeMs: number;
   readonly position?: Vec3;
+  /** World-space velocity in units per second. */
   readonly velocity?: Vec3;
+  /** Vehicle orientation (local +Z forward, +Y up, +X left). */
+  readonly orientation?: Quaternion;
   /** Speed in backend units per second. */
   readonly speed?: number;
-  /** Index of the last checkpoint passed, if the backend tracks checkpoints. */
+  /** Number of wheels touching a surface. 0 = airborne. */
+  readonly wheelsInContact?: number;
+  /** Number of checkpoints passed so far (= index of the next one), if the backend tracks checkpoints. */
   readonly checkpointIndex?: number;
   /** Total checkpoints on the track, if known. */
   readonly checkpointCount?: number;

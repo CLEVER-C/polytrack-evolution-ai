@@ -29,6 +29,8 @@ export const GAME_DIR = join(VENDOR_DIR, "game");
 /** Payloads captured from the real game (Init message, per-track CreateCar inputs). */
 export const CAPTURE_DIR = join(VENDOR_DIR, "capture");
 export const INIT_CAPTURE_PATH = join(CAPTURE_DIR, "init.json");
+/** Static game data: part registry, rotation table, partSize. */
+export const GAME_DATA_CAPTURE_PATH = join(CAPTURE_DIR, "game-data.json");
 export const TRACKS_CAPTURE_DIR = join(CAPTURE_DIR, "tracks");
 
 export interface ManifestFile {

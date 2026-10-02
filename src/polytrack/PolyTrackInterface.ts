@@ -3,8 +3,7 @@
  *
  * Everything typed here was read from the PolyTrack 0.6.3 build; see
  * docs/POLYTRACK_PROTOCOL.md for the evidence (file + offset) behind each field.
- * Nothing here is implemented: the methods describe what an implementation must
- * do and list what we still need to learn from PolyTrack before it can.
+ * Implemented by `LocalPolyTrack` (src/polytrack/LocalPolyTrack.ts).
  *
  * This layer speaks PolyTrack's own vocabulary (up/down/left/right/reset,
  * CarState). Translating to the game-agnostic `GameBackend` contract is the job
@@ -95,10 +94,19 @@ export interface PolyTrackCarState {
   readonly controls: PolyTrackControls;
 }
 
-/** Identifies which track to load. The worker consumes the track "save string" format. */
+/**
+ * Everything needed to place a car on a track. All fields are produced by the
+ * game's own code (captured by scripts/capture-polytrack.ts; `CapturedTrack`
+ * satisfies this).
+ */
 export interface PolyTrackTrackSource {
   /** Track save string as produced by the game's `toSaveString()`. */
   readonly saveString: string;
+  /** Mountain collision vertices as the game sends them in CreateCar. */
+  readonly mountainVertices: Float32Array;
+  readonly mountainOffset: PolyTrackVec3;
+  /** Start pose from the game's `getStartTransform()`; used for the pre-first-tick spawn state. */
+  readonly startTransform: { readonly position: PolyTrackVec3; readonly quaternion: PolyTrackQuaternion } | null;
 }
 
 /**
@@ -119,50 +127,35 @@ export interface PolyTrackCrashPolicy {
 /**
  * Closed-loop control of one PolyTrack car: set inputs, advance frames, read state.
  *
- * IMPORTANT: the stock 0.6.3 worker protocol cannot implement `step()`
- * deterministically. Realtime mode maps inputs to frames using wall-clock time,
- * and the fast non-realtime mode only plays pre-recorded inputs (doc §7). An
- * implementation therefore needs a patched worker (e.g. a custom step message)
- * or direct calls into `polytrack_physics.wasm`, running against a local static
- * copy of the build (doc §14).
+ * The stock 0.6.3 worker protocol cannot step deterministically with live
+ * inputs (doc §7). `LocalPolyTrack` implements this by calling the physics'
+ * `updateCarModel` directly in the local, browser-free setup
+ * (docs/LOCAL_SIMULATION.md).
  */
 export interface PolyTrackInterface {
   /**
-   * Load the physics and prepare the track so cars can be created.
-   *
-   * Must perform the equivalent of the `Init` message: supply track-part
-   * collision vertices/detectors/start offsets, car collision shape vertices and
-   * mass offset, and install the worker's patched `Math`.
-   *
-   * Still needed from PolyTrack:
-   * - how to obtain `trackParts` (built from models/*.glb on the main thread) outside the game UI
-   * - how to obtain car collision vertices + `massOffset` (from models/car.glb)
-   * - how to generate `mountainVertices`/`mountainOffset` for a track
-   * - whether this can run in Node or needs a headless browser
+   * Load the physics (equivalent of the game's `Init` message) and select the
+   * track that `reset()` places cars on.
    */
   connect(track: PolyTrackTrackSource): Promise<void>;
 
-  /** Delete any car and release the physics instance. Maps to `DeleteCar` + worker termination. */
+  /** Delete any car and release the physics instance. */
   disconnect(): Promise<void>;
 
   /**
-   * Place a fresh car at the track start and return its initial state.
+   * Place a fresh car at the track start and return its spawn state.
    *
-   * The game itself implements restart as `DeleteCar` → `CreateCar` (with
-   * `carRecording: null`) → `StartCar`. There is no dedicated restart message.
-   *
-   * Still needed: how `hasStarted` / the start countdown interacts with the
-   * first frames, and confirmation that a recreated car is bit-identical to a
-   * fresh one (determinism).
+   * Restart works like the game's: `DeleteCar` → `CreateCar` (no recording).
+   * No physics tick has run yet, so the returned state is the spawn state the
+   * game itself reports before the first update (`Simulation.createCar` in
+   * main.bundle.js): start pose, zero speed, `frames` 0, no wheel contacts.
+   * Controls are cleared.
    */
   reset(): Promise<PolyTrackCarState>;
 
   /**
    * Advance the simulation by `frames` 1 ms ticks using the current controls,
    * and return the state after the last tick.
-   *
-   * Still needed: a deterministic stepping mechanism (see interface doc).
-   * The stock protocol has none.
    */
   step(frames?: number): Promise<PolyTrackCarState>;
 
@@ -181,10 +174,9 @@ export interface PolyTrackInterface {
   /**
    * Whether the car is considered crashed under `policy`.
    *
-   * PolyTrack exposes NO crash flag, so this is derived from state history
-   * (wheelContact, quaternion, position.y, nextCheckpointIndex progress).
-   * Still needed: sensible threshold values for real tracks and a known
-   * kill-plane Y, if one exists in the physics.
+   * PolyTrack exposes NO crash flag, so this is derived from the per-tick state
+   * history since the last reset (wheelContact, quaternion, position.y,
+   * nextCheckpointIndex progress). Thresholds are our policy, not game data.
    */
   hasCrashed(policy: PolyTrackCrashPolicy): boolean;
 }
