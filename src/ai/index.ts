@@ -1,3 +1,4 @@
 export * from "./types.js";
-export { FeedForwardNetwork } from "./FeedForwardNetwork.js";
-export { NeuralNetworkAgent } from "./NeuralNetworkAgent.js";
+export * from "./random.js";
+export * from "./NeuralNetwork.js";
+export * from "./DrivingAgent.js";
