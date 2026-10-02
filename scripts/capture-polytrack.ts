@@ -18,6 +18,7 @@ import { join } from "node:path";
 import { chromium } from "playwright-core";
 import {
   CAPTURE_DIR,
+  GAME_DATA_CAPTURE_PATH,
   GAME_DIR,
   INIT_CAPTURE_PATH,
   MANIFEST_PATH,
@@ -79,6 +80,7 @@ const TRACK_EXTRACTOR = String.raw`async (files) => {
   };
   const TrackCodec = pick(9117, "fromExportString");
   const Mountains = pick(6421, "createMountainVertices");
+  const Registry = req(2600);
   const out = [];
   for (const file of files) {
     const code = await fetch(file).then((r) => r.text());
@@ -87,6 +89,12 @@ const TRACK_EXTRACTOR = String.raw`async (files) => {
     const td = parsed.trackData;
     const m = Mountains.createMountainVertices(td.getBounds());
     const st = td.getStartTransform();
+    const parts = [];
+    td.forEachPart((x, y, z, id, rotation, rotationAxis, color, checkpointOrder, startOrder) => {
+      const tiles = [];
+      Registry.Hw(id).tiles.rotated(rotation, rotationAxis).forEach((tx, ty, tz) => tiles.push([tx, ty, tz]));
+      parts.push({ id, x, y, z, rotation, rotationAxis, color, checkpointOrder: checkpointOrder ?? null, startOrder: startOrder ?? null, tiles });
+    });
     out.push(JSON.stringify(window.__ptEncode({
       file,
       name: parsed.trackMetadata.name,
@@ -95,6 +103,7 @@ const TRACK_EXTRACTOR = String.raw`async (files) => {
       // Same conversion the game applies before CreateCar during a race (getMountainVertices).
       mountainVertices: new Float32Array(m.vertices),
       mountainOffset: { x: m.offset.x, y: m.offset.y, z: m.offset.z },
+      parts,
       startTransform: st == null ? null : {
         position: { x: st.position.x, y: st.position.y, z: st.position.z },
         quaternion: { x: st.quaternion.x, y: st.quaternion.y, z: st.quaternion.z, w: st.quaternion.w },
@@ -102,6 +111,59 @@ const TRACK_EXTRACTOR = String.raw`async (files) => {
     })));
   }
   return out;
+}`;
+
+/**
+ * Runs in the page: static game data needed to place track parts in world space,
+ * read from the game's own modules (6762 partSize, 5494 rotation table,
+ * 2600 part registry, 494 part names, 3080 detector types, 7781 rotation axes,
+ * 641 car constants).
+ */
+const GAME_DATA_EXTRACTOR = String.raw`() => {
+  let req;
+  self.webpackChunk.push([["__polytrack_capture_data"], {}, (r) => { req = r; }]);
+  const enumNames = (id) => {
+    const e = Object.values(req(id))[0];
+    return Object.fromEntries(Object.entries(e).filter(([k]) => !/^\d+$/.test(k)));
+  };
+  const Rotations = req(5494);
+  const rotationQuaternions = [];
+  for (let axis = 0; axis < 6; axis++) {
+    const row = [];
+    for (let rotation = 0; rotation < 4; rotation++) {
+      const q = Rotations.hT(rotation, axis);
+      row.push({ x: q.x, y: q.y, z: q.z, w: q.w });
+    }
+    rotationQuaternions.push(row);
+  }
+  const Registry = req(2600);
+  const partNames = enumNames(494);
+  const nameById = Object.fromEntries(Object.entries(partNames).map(([k, v]) => [v, k]));
+  const Car = req(641).A;
+  const v3 = (v) => [v.x, v.y, v.z];
+  return JSON.stringify({
+    partSize: req(6762).A.partSize,
+    car: {
+      massOffset: Car.massOffset,
+      suspensionResetLengthFront: Car.suspensionResetLengthFront,
+      suspensionResetLengthRear: Car.suspensionResetLengthRear,
+      detectorBoxCenter: v3(Car.detectorBoxCenter),
+      detectorBoxSize: v3(Car.detectorBoxSize),
+    },
+    rotationAxes: enumNames(7781),
+    detectorTypes: enumNames(3080),
+    rotationQuaternions,
+    checkpointPartIds: Registry.bK,
+    startPartIds: Registry.l1,
+    parts: Registry.yD.map((p) => ({
+      id: p.id,
+      name: nameById[p.id] ?? null,
+      category: p.category,
+      models: p.models,
+      detector: p.detector == null ? null : { type: p.detector.type, center: [...p.detector.center], size: [...p.detector.size] },
+      startOffset: p.startOffset == null ? null : [p.startOffset.x, p.startOffset.y, p.startOffset.z],
+    })),
+  });
 }`;
 
 async function main(): Promise<void> {
@@ -143,9 +205,11 @@ async function main(): Promise<void> {
 
     console.log(`Computing CreateCar inputs for ${trackFiles.length} tracks with the game's own modules...`);
     const tracks = (await page.evaluate(`(${TRACK_EXTRACTOR})(${JSON.stringify(trackFiles)})`)) as string[];
+    const gameData = (await page.evaluate(`(${GAME_DATA_EXTRACTOR})()`)) as string;
 
     await mkdir(TRACKS_CAPTURE_DIR, { recursive: true });
     await writeFile(INIT_CAPTURE_PATH, JSON.stringify(initPayload));
+    await writeFile(GAME_DATA_CAPTURE_PATH, gameData);
     for (const json of tracks) {
       const { file } = JSON.parse(json) as { file: string };
       const stem = file.slice(file.lastIndexOf("/") + 1).replace(/\.track$/, "");

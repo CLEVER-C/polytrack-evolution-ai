@@ -20,6 +20,9 @@ export interface CarStep {
   readonly decoded: DecodedCarBuffer;
 }
 
+/** The parts of a captured track that CreateCar needs. */
+export type CarTrackInput = Pick<CapturedTrack, "saveString" | "mountainVertices" | "mountainOffset">;
+
 const UPDATE_ARG_TYPES = ["number", "boolean", "boolean", "boolean", "boolean", "boolean", "number"] as const;
 
 export class LocalSimulation {
@@ -47,7 +50,7 @@ export class LocalSimulation {
   }
 
   /** Places a new car at the track start. With `recording`, the car replays it (worker loop only). */
-  createCar(track: CapturedTrack, recording: string | null = null): number {
+  createCar(track: CarTrackInput, recording: string | null = null): number {
     const carId = this.nextCarId++;
     this.host.post({
       messageType: PolyTrackMessageType.CreateCar,
@@ -97,7 +100,7 @@ export class LocalSimulation {
    * Runs a recording through the worker's OWN non-realtime stepping loop
    * (StartCar with targetSimulationTimeFrames) and returns the per-frame raw states.
    */
-  async runWorkerLoop(track: CapturedTrack, recording: string, frames: number): Promise<Uint8Array[]> {
+  async runWorkerLoop(track: CarTrackInput, recording: string, frames: number): Promise<Uint8Array[]> {
     const carId = this.createCar(track, recording);
     const states: Uint8Array[] = [];
     let done!: () => void;

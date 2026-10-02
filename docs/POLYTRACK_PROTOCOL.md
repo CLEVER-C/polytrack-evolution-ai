@@ -262,9 +262,9 @@ Answers marked ✅ were established by the local setup; details and evidence are
    and the CarState `hasStarted` flag is true from the first tick.
 3. ✅ Captured once from the unmodified game in headless Edge (Init message intercepted at the
    `Worker` boundary; track inputs computed with the game's own modules).
-4. ❓ How to count total checkpoints reliably for a track.
+4. ✅ Total = number of distinct `checkpointOrder` values (game's `getTotalNumberOfCheckpointIndices()`); see [TRACK_OBSERVATIONS.md](TRACK_OBSERVATIONS.md) §3.
 5. ✅ Byte-identical CarState streams across instances, processes, clocks and the game's own loop.
    (Cross-checked against the game's non-realtime replay loop rather than `Verify`, since no
    finishing recording is available yet.)
 6. ✅ Runs under Node in a `vm` context with small Web Worker shims; no browser needed at runtime.
-7. ❓ Whether velocity/angular velocity can be read from WASM memory, or must be finite-differenced.
+7. ✅ Velocity is finite-differenced from positions (metres per 1 ms tick; matches `speedKmh` within 0.1 km/h). Reading it from WASM memory was not needed. Angular velocity is not exposed.

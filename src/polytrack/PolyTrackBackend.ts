@@ -1,50 +1,97 @@
-import { NotImplementedError } from "../errors.js";
+import type { TrackModel } from "../environment/track.js";
 import type { ControlInput, GameBackend, VehicleState } from "../environment/types.js";
+import { loadCapturedGameData, loadCapturedInit, type CapturedGameData, type CapturedInit, type CapturedTrack } from "./local/capture.js";
+import { LocalPolyTrack } from "./LocalPolyTrack.js";
+import type { PolyTrackCarState, PolyTrackCrashPolicy } from "./PolyTrackInterface.js";
+import { PolyTrackTrack } from "./track/PolyTrackTrack.js";
 
-/**
- * Configuration for connecting to PolyTrack. Intentionally minimal: how we
- * reach the game (browser automation, a local build, a headless port, ...)
- * is undecided, so only the obvious knobs live here for now.
- */
 export interface PolyTrackBackendConfig {
-  /** Where the game is loaded from (URL or local path). Undecided. */
-  readonly gameLocation?: string;
-  /** Identifier of the track to drive, in whatever form the integration ends up needing. */
-  readonly trackId?: string;
-  /** Control ticks per second the integration should target. */
-  readonly ticksPerSecond?: number;
+  /** Track captured from the game (vendor/polytrack/0.6.3/capture/tracks/<name>.json). */
+  readonly track: CapturedTrack;
+  /** Physics ticks (1 ms each) per `step()` call, i.e. how long each control decision is held. Default 10 (100 Hz). */
+  readonly ticksPerStep?: number;
+  /** When the run counts as failed. Default: no crash detection. */
+  readonly crashPolicy?: PolyTrackCrashPolicy;
+  /** Captured game data; loaded from vendor/ when omitted. */
+  readonly init?: CapturedInit;
+  readonly gameData?: CapturedGameData;
 }
 
 /**
- * GameBackend implementation for PolyTrack.
- *
- * Placeholder only. No assumptions are made yet about what PolyTrack exposes
- * internally; the mechanism for sending inputs and reading car state will be
- * worked out in a later step. Everything outside `src/polytrack` must keep
- * depending on `GameBackend`, never on this class directly.
+ * GameBackend for PolyTrack 0.6.3 on the local physics. Translates the
+ * game-agnostic ControlInput/VehicleState contract to PolyTrack's own
+ * controls and CarState.
  */
 export class PolyTrackBackend implements GameBackend {
   readonly name = "polytrack";
+  private polytrack: LocalPolyTrack | null = null;
+  private trackModel: TrackModel | null = null;
 
-  constructor(private readonly config: PolyTrackBackendConfig = {}) {}
+  constructor(private readonly config: PolyTrackBackendConfig) {}
+
+  get ticksPerStep(): number {
+    return this.config.ticksPerStep ?? 10;
+  }
 
   async connect(): Promise<void> {
-    throw new NotImplementedError("PolyTrackBackend.connect");
+    const gameData = this.config.gameData ?? (await loadCapturedGameData());
+    const init = this.config.init ?? (await loadCapturedInit());
+    this.trackModel = new PolyTrackTrack(this.config.track, gameData).toTrackModel();
+    this.polytrack = new LocalPolyTrack({ init, gameData });
+    await this.polytrack.connect(this.config.track);
+  }
+
+  /** Track-relative structure (gates, route) for TrackObservation. Available after connect(). */
+  getTrackModel(): TrackModel {
+    if (this.trackModel === null) throw new Error("Call connect() first");
+    return this.trackModel;
   }
 
   async resetRun(): Promise<void> {
-    throw new NotImplementedError("PolyTrackBackend.resetRun");
+    await this.require().reset();
   }
 
-  async step(_input: ControlInput): Promise<void> {
-    throw new NotImplementedError("PolyTrackBackend.step");
+  async step(input: ControlInput): Promise<void> {
+    const p = this.require();
+    p.setControls({ up: input.accelerate, down: input.brake, left: input.steerLeft, right: input.steerRight, reset: false });
+    await p.step(this.ticksPerStep);
   }
 
   async readState(): Promise<VehicleState> {
-    throw new NotImplementedError("PolyTrackBackend.readState");
+    const p = this.require();
+    const s = p.getState();
+    if (s === null) throw new Error("Call resetRun() first");
+    return toVehicleState(s, p, this.getTrackModel().checkpointCount, this.config.crashPolicy);
   }
 
   async disconnect(): Promise<void> {
-    throw new NotImplementedError("PolyTrackBackend.disconnect");
+    await this.polytrack?.disconnect();
+    this.polytrack = null;
   }
+
+  private require(): LocalPolyTrack {
+    if (this.polytrack === null) throw new Error("Call connect() first");
+    return this.polytrack;
+  }
+}
+
+/** Maps PolyTrack's CarState onto the game-agnostic VehicleState. */
+export function toVehicleState(
+  s: PolyTrackCarState,
+  polytrack: LocalPolyTrack,
+  checkpointCount: number,
+  crashPolicy?: PolyTrackCrashPolicy,
+): VehicleState {
+  return {
+    timeMs: s.frames, // 1 frame = 1 ms
+    position: s.position,
+    velocity: polytrack.getVelocity(),
+    orientation: s.quaternion, // PolyTrack car-local axes: +Z forward, +Y up, +X left (verified)
+    speed: s.speedKmh / 3.6,
+    wheelsInContact: s.wheelContact.filter((w) => w !== null).length,
+    checkpointIndex: s.nextCheckpointIndex,
+    checkpointCount,
+    finished: s.finishFrames !== null,
+    failed: crashPolicy !== undefined && polytrack.hasCrashed(crashPolicy),
+  };
 }

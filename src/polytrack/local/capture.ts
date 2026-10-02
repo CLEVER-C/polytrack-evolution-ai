@@ -5,7 +5,7 @@
  */
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { INIT_CAPTURE_PATH, TRACKS_CAPTURE_DIR } from "./paths.js";
+import { GAME_DATA_CAPTURE_PATH, INIT_CAPTURE_PATH, TRACKS_CAPTURE_DIR } from "./paths.js";
 
 export interface EncodedTypedArray {
   readonly __typed: "Float32Array" | "Float64Array" | "Uint8Array" | "Int32Array" | "Uint32Array";
@@ -28,6 +28,50 @@ export interface CapturedInit {
   readonly carMassOffset: number;
 }
 
+/** One placed part, exactly as `trackData.forEachPart` reports it. Grid units; world = grid × partSize. */
+export interface CapturedPartPlacement {
+  readonly id: number;
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  /** 0–3 quarter turns about the rotation axis. */
+  readonly rotation: number;
+  /** Index into `rotationAxes` (YPositive = 0 … ZNegative = 5). */
+  readonly rotationAxis: number;
+  readonly color: number;
+  readonly checkpointOrder: number | null;
+  readonly startOrder: number | null;
+  /** Grid cells the part occupies, relative to (x, y, z), already rotated by the game (`tiles.rotated`). */
+  readonly tiles: readonly (readonly [number, number, number])[];
+}
+
+/** Static game data read from the game's own modules by the capture step. */
+export interface CapturedGameData {
+  /** World units (metres) per grid cell. */
+  readonly partSize: number;
+  readonly car: {
+    readonly massOffset: number;
+    readonly suspensionResetLengthFront: number;
+    readonly suspensionResetLengthRear: number;
+    readonly detectorBoxCenter: readonly [number, number, number];
+    readonly detectorBoxSize: readonly [number, number, number];
+  };
+  readonly rotationAxes: Readonly<Record<string, number>>;
+  readonly detectorTypes: Readonly<Record<string, number>>;
+  /** `rotationQuaternions[rotationAxis][rotation]`, from the game's `hT(rotation, rotationAxis)`. */
+  readonly rotationQuaternions: readonly (readonly { x: number; y: number; z: number; w: number }[])[];
+  readonly checkpointPartIds: readonly number[];
+  readonly startPartIds: readonly number[];
+  readonly parts: readonly {
+    readonly id: number;
+    readonly name: string | null;
+    readonly category: number;
+    readonly models: readonly (readonly string[])[];
+    readonly detector: { readonly type: number; readonly center: readonly [number, number, number]; readonly size: readonly [number, number, number] } | null;
+    readonly startOffset: readonly [number, number, number] | null;
+  }[];
+}
+
 /** Everything the CreateCar message needs for one track, computed by the game's own modules. */
 export interface CapturedTrack {
   readonly file: string;
@@ -38,7 +82,9 @@ export interface CapturedTrack {
   /** Float32 mountain collision vertices, exactly as the game sends them during a race. */
   readonly mountainVertices: Float32Array;
   readonly mountainOffset: { readonly x: number; readonly y: number; readonly z: number };
-  /** Informational: start pose computed on the main thread. */
+  /** Every placed part of the track. */
+  readonly parts: readonly CapturedPartPlacement[];
+  /** Start pose computed by the game's `getStartTransform()` on the main thread. */
   readonly startTransform: {
     readonly position: { readonly x: number; readonly y: number; readonly z: number };
     readonly quaternion: { readonly x: number; readonly y: number; readonly z: number; readonly w: number };
@@ -61,6 +107,10 @@ export function reviveTypedArrays(_key: string, value: unknown): unknown {
 
 export async function loadCapturedInit(): Promise<CapturedInit> {
   return JSON.parse(await readFile(INIT_CAPTURE_PATH, "utf8"), reviveTypedArrays) as CapturedInit;
+}
+
+export async function loadCapturedGameData(): Promise<CapturedGameData> {
+  return JSON.parse(await readFile(GAME_DATA_CAPTURE_PATH, "utf8")) as CapturedGameData;
 }
 
 /** `name` is the track file stem, e.g. "summer1" for tracks/official/summer1.track. */
