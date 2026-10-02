@@ -4,3 +4,6 @@ dist/
 # Generated run output (genomes, logs, recordings). Keep the folder itself.
 data/*
 !data/.gitkeep
+
+# Local copies of PolyTrack game files (proprietary; never commit)
+vendor/
