@@ -1,43 +1,43 @@
-import type { ControlInput, Observation } from "../environment/types.js";
+import type { Observation } from "../environment/types.js";
 
 export type ActivationFunction = "tanh" | "sigmoid" | "relu" | "linear";
 
+export interface LayerDefinition {
+  readonly size: number;
+  readonly activation: ActivationFunction;
+}
+
+/** One named output neuron with its own activation (so each output can have its own range). */
+export interface OutputDefinition {
+  readonly name: string;
+  readonly activation: ActivationFunction;
+}
+
 /** Shape of a fully-connected feed-forward network. */
-export interface NetworkTopology {
+export interface NetworkArchitecture {
   readonly inputSize: number;
-  /** Sizes of hidden layers, in order. May be empty. */
-  readonly hiddenLayers: readonly number[];
-  readonly outputSize: number;
-  readonly hiddenActivation: ActivationFunction;
-  readonly outputActivation: ActivationFunction;
+  /** Hidden layers in order. May be empty. */
+  readonly hiddenLayers: readonly LayerDefinition[];
+  readonly outputs: readonly OutputDefinition[];
 }
 
 /**
- * A neural network whose parameters can be read and written as one flat
- * vector. The flat-vector view is what evolution operates on, so the evolution
- * layer never needs to know about layers or activations.
+ * Continuous driving intent produced by an agent, clamped to valid ranges.
+ * PolyTrack itself only accepts on/off keys; see `DrivingAgent.toControls`.
  */
-export interface NeuralNetwork {
-  readonly topology: NetworkTopology;
-  /** Total number of weights + biases. */
-  readonly parameterCount: number;
-  forward(inputs: readonly number[]): number[];
-  getParameters(): Float64Array;
-  /** Must be given exactly `parameterCount` values. */
-  setParameters(parameters: ArrayLike<number>): void;
+export interface DrivingAction {
+  /** -1 = full left … +1 = full right. */
+  readonly steering: number;
+  /** 0 … 1. */
+  readonly throttle: number;
+  /** 0 … 1. */
+  readonly brake: number;
 }
 
-/** Anything that can drive: takes an observation, returns controls. */
+/** Anything that can drive: takes an observation, returns a driving action. */
 export interface Agent {
   readonly id: string;
-  act(observation: Observation): ControlInput;
+  act(observation: Observation): DrivingAction;
   /** Clear any per-episode internal state (no-op for stateless agents). */
   reset(): void;
-}
-
-/** Maps raw network outputs to discrete controls. */
-export interface ActionDecoder {
-  /** Number of network outputs this decoder expects. */
-  readonly outputSize: number;
-  decode(outputs: readonly number[]): ControlInput;
 }

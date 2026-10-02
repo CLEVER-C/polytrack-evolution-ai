@@ -15,7 +15,8 @@
     "setup:polytrack": "npm run polytrack:fetch && node dist/scripts/capture-polytrack.js",
     "verify:simulation": "npm run build && node dist/scripts/verify-simulation.js",
     "test": "npm run build && node --test --test-timeout=300000 \"dist/test/**/*.test.js\"",
-    "observe:example": "npm run build && node dist/scripts/example-observation.js"
+    "observe:example": "npm run build && node dist/scripts/example-observation.js",
+    "agent:example": "npm run build && node dist/scripts/example-agent.js"
   },
   "engines": {
     "node": ">=20"
