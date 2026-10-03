@@ -235,7 +235,7 @@ export class EvolutionEngine {
     const started = performance.now();
     this.observer?.onGenerationStart?.(population.generation);
 
-    this.populationEvaluator ??= await createPopulationEvaluator(this.config, this.deps, this.workers);
+    this.populationEvaluator ??= await createPopulationEvaluator(this.config, this.deps, this.workers, this.evaluator.road);
     const individuals = population.individuals;
     const results = await this.populationEvaluator.evaluateAll(
       individuals.map((ind) => ind.weights),

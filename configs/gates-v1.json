@@ -1,0 +1,5 @@
+{
+  "$comment": "Use the original gate-based observation and straight-line progress metric (tracks with wall-ride parts, where road-v2 is unavailable). npm run train -- --config configs/gates-v1.json",
+  "observation": { "version": "gates-v1" },
+  "fitness": { "progressMetric": "gates-v1" }
+}

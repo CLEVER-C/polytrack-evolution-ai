@@ -166,6 +166,13 @@ nextGates: #1 267.5 m, rel (x −88.6, y −28.5, z 250.8), bearing −0.339
 upcomingTurns: −2.159 rad over 84.9 m, −1.176 over 368.0 m, −0.395 over 141.4 m
 ```
 
+> **Update (step 9):** road-relative observations now exist. The road is built from the collision
+> meshes (approach 1 in the table below, as a surface graph rather than raycasts): centerline, edges,
+> normal, bank, curvature, distance along the road. See
+> [ROAD_AWARE_OBSERVATIONS.md](ROAD_AWARE_OBSERVATIONS.md). It supports road driven from above (Summer 1,
+> Winter 1 among the official tracks); tracks with wall-ride parts still use the gate-based
+> observation below (`"gates-v1"`). The rest of this page describes the gate-based observation.
+
 ## 8. Can we get true road-relative observations?
 
 | Approach | Uses only real data? | Verdict |

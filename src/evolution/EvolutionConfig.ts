@@ -25,7 +25,17 @@ export type SelectionSettings =
       readonly tournamentSize: number;
     };
 
+/**
+ * Observation and progress-metric versions. A config without a version field
+ * was made before versions existed and means "gates-v1" (see observationVersion /
+ * progressMetric), so old checkpoints and replays keep their original meaning.
+ */
+export type ObservationVersion = "gates-v1" | "road-v2";
+export type ProgressMetric = "gates-v1" | "road-v2";
+
 export interface FitnessSettings {
+  /** How progress between checkpoints is measured. Absent = "gates-v1". */
+  readonly progressMetric?: ProgressMetric;
   /** Points per unit of track progress (one gate = one unit). */
   readonly progressWeight: number;
   /** Maximum bonus for finishing, scaled by how much of maxTicks was left. */
@@ -60,6 +70,10 @@ export interface EvolutionConfig {
   readonly fitness: FitnessSettings;
   readonly episode: EpisodeSettings;
   readonly network: {
+    /** Which observation encoder feeds the network. Absent = "gates-v1". */
+    readonly observation?: ObservationVersion;
+    /** road-v2: distances ahead along the road that are described (m). */
+    readonly roadLookahead?: readonly number[];
     readonly hiddenLayers: readonly number[];
     /** Upcoming gates described in each observation. */
     readonly lookaheadGates: number;
@@ -74,7 +88,7 @@ export const DEFAULT_EVOLUTION_CONFIG: EvolutionConfig = {
   eliteFraction: 0.05,
   selection: { type: "elitist", parentFraction: 0.2 },
   mutation: { rate: 0.1, strength: 0.2 },
-  fitness: { progressWeight: 1000, completionTimeWeight: 1000, crashPenalty: 50 },
+  fitness: { progressMetric: "road-v2", progressWeight: 1000, completionTimeWeight: 1000, crashPenalty: 50 },
   episode: {
     maxTicks: 60_000,
     ticksPerStep: 10,
@@ -82,7 +96,7 @@ export const DEFAULT_EVOLUTION_CONFIG: EvolutionConfig = {
     stallEpsilon: 0.001,
     crashPolicy: { maxUpsideDownFrames: 1_000, maxAirborneFrames: 5_000 },
   },
-  network: { hiddenLayers: [...DEFAULT_HIDDEN_LAYERS], lookaheadGates: 3, controlMapping: DEFAULT_CONTROL_MAPPING },
+  network: { observation: "road-v2", roadLookahead: [10, 25, 50, 80, 120, 170], hiddenLayers: [...DEFAULT_HIDDEN_LAYERS], lookaheadGates: 3, controlMapping: DEFAULT_CONTROL_MAPPING },
 };
 
 type DeepPartial<T> = { [K in keyof T]?: T[K] extends readonly unknown[] ? T[K] : T[K] extends object ? DeepPartial<T[K]> : T[K] };
@@ -108,6 +122,12 @@ export function createEvolutionConfig(overrides: EvolutionConfigOverrides = {}):
   return config;
 }
 
+/** The config's observation encoder; configs from before versioning are "gates-v1". */
+export const observationVersion = (c: Pick<EvolutionConfig, "network">): ObservationVersion => c.network.observation ?? "gates-v1";
+
+/** The config's progress metric; configs from before versioning are "gates-v1". */
+export const progressMetric = (c: Pick<EvolutionConfig, "fitness">): ProgressMetric => c.fitness.progressMetric ?? "gates-v1";
+
 export function eliteCount(config: Pick<EvolutionConfig, "eliteFraction" | "populationSize">): number {
   return Math.min(config.populationSize, Math.max(1, Math.round(config.eliteFraction * config.populationSize)));
 }
@@ -128,4 +148,7 @@ export function validateEvolutionConfig(c: EvolutionConfig): void {
   if (!Number.isInteger(e.maxTicks) || e.maxTicks < e.ticksPerStep) fail("episode.maxTicks must be an integer ≥ ticksPerStep");
   if (!(e.stallTicks > 0)) fail("episode.stallTicks must be > 0");
   if (c.track.length === 0) fail("track is required");
+  if (!["gates-v1", "road-v2"].includes(observationVersion(c))) fail('network.observation must be "gates-v1" or "road-v2"');
+  if (!["gates-v1", "road-v2"].includes(progressMetric(c))) fail('fitness.progressMetric must be "gates-v1" or "road-v2"');
+  if (observationVersion(c) === "road-v2" && !(c.network.roadLookahead !== undefined && c.network.roadLookahead.length > 0 && c.network.roadLookahead.every((d) => d > 0))) fail("network.roadLookahead must list positive distances");
 }

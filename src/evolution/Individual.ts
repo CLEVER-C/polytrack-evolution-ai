@@ -19,6 +19,8 @@ export interface EpisodeStats {
   readonly maxSpeedKmh: number;
   /** Network decisions taken. */
   readonly decisions: number;
+  /** road-v2 progress metric: furthest distance along the road counted (m). Absent for gates-v1. */
+  readonly roadDistance?: number;
 }
 
 /** How an individual came to exist. "transfer" = carried over from another track (curriculum). */

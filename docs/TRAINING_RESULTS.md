@@ -107,14 +107,15 @@ Checked for each item the task asked about, using the re-simulated replays and t
 | Behaviour | Found? | Evidence |
 | --- | --- | --- |
 | Standing still | **No.** | Best drivers are still 0–12 % of the time (23 % for generation 0), mostly the last seconds after getting stuck. A car that never moves scores −50, the minimum. |
-| Driving backward | **Not as a strategy.** | Best drivers move backwards 1–17 % of the time. In the viewer this is sliding backwards after spinning out (−17 km/h at 14.5 s in generation 99), not a way to gain fitness. Progress is a running maximum of distance to the next gate, so reversing cannot increase it. |
+| Driving backward | **Yes. This is the plateau's exploit** *(corrected in step 9)*. | Best drivers move backwards 1–17 % of the time. Step 9's diagnostic (`npm run analyze:turn`) showed the generation-81/99 best **holding the brake** right after checkpoint 2: it stops about 8 m past the gate, then the held brake reverses it at up to 39 km/h. Reversing brought it slightly closer to checkpoint 3 *in a straight line*, which the gates-v1 metric rewarded: +0.111 progress (+111 fitness) while driving backwards. Earlier this row said the reversing was harmless sliding after a spin-out; that was wrong. |
 | Exploiting checkpoints | **No.** | Checkpoint counts come from the physics' `nextCheckpointIndex`. The fractional part is capped at 0.999, and no reset key is available. |
 | Oscillating controls | **Mild.** | Steering flips 0.2–1.0 times per second; the final best steers 70 % of the time with ~1 flip/s. That is weaving, not rapid left/right toggling, which would show many flips per second. |
-| **Repeatedly crashing in a high-reward location** | **Yes. This is the plateau.** | Every best driver from generation 26 on ends its run within ~30 m of the same spot, (−164…−195, 0…1, −24…4), just after checkpoint 2 at (−180, 2, −10). In the viewer, the generation-99 best takes checkpoint 2 at speed, spins out sideways on the following banked turn, and stops against the wall, where the episode stalls. |
-| Farming fitness without completing | **Yes, a small amount, through the straight-line proxy.** | After checkpoint 2, fitness grows with straight-line closeness to checkpoint 3 at (−100, 12, −80), not with distance along the road (documented in [FITNESS_FUNCTION.md](FITNESS_FUNCTION.md#known-limitations--possible-exploits)). The +44 between generations 26 and 99 is the crash spot moving ~5 m closer to checkpoint 3 in a straight line. The cars got slightly better at *where* they crash, not at getting through the turn. Generation 18 shows the opposite case: progress exactly 2.000, because it ended (at y = 24, off the road) farther from checkpoint 3 than the segment length, so the fraction was clamped to 0. |
+| **Repeatedly crashing in a high-reward location** | **Yes.** | Every best driver from generation 26 on ends its run within ~30 m of the same spot, (−164…−195, 0…1, −24…4), just after checkpoint 2 at (−180, 2, −10). *Correction (step 9):* the generation-99 best does not reach the banked turn at all (it starts ~50 m later). It brakes right after the gate, stops and reverses (row above); the viewer shows it sliding backwards and ending against the wall beside the road. |
+| Farming fitness without completing | **Yes, through the straight-line proxy.** | After checkpoint 2, fitness grows with straight-line closeness to checkpoint 3 at (−100, 12, −80), not with distance along the road (documented in [FITNESS_FUNCTION.md](FITNESS_FUNCTION.md#known-limitations--possible-exploits)). The gains from generation 26 to 99 come from ending (by reversing) closer to checkpoint 3 in a straight line, not from getting through the turn. Generation 18 shows the opposite case: progress exactly 2.000, because it ended (at y = 24, off the road) farther from checkpoint 3 than the segment length, so the fraction was clamped to 0. Fixed in step 9 by the road-v2 metric. |
 
-In short, the gates passed are genuine. The last ~2 % of fitness gained in this run rewards the
-crash position rather than driving skill, and the run is stuck at the turn after checkpoint 2.
+In short, the gates passed are genuine. The fitness gained after generation ~26 rewards reversing
+towards checkpoint 3 in a straight line rather than driving skill, and the run is stuck right after
+checkpoint 2. (Diagnosed in step 9; see below.)
 
 ## Determinism checks during these runs
 
@@ -191,10 +192,104 @@ Each run folder also holds `config.json` (full configuration and command line) a
 
 Recorded for later, deliberately not acted on in this step:
 
-- The turn after checkpoint 2 is the bottleneck: cars arrive at 200+ km/h and spin out. The
+- The stretch after checkpoint 2 is the bottleneck: the best car brakes, stops and reverses (the
+  straight-line metric rewards it), about 50 m before a banked U-turn it cannot see coming. The
   network has gate-based observations only, with no road edges or walls (TRACK_OBSERVATIONS.md),
   so it cannot "see" the turn's shape.
 - The straight-line progress proxy rewards crash position on that segment; a road-following
   progress measure would remove the artifact.
 - Selection pressure plateaus with elitist selection, σ 0.2 and 5 elites; diversity or
   mutation settings are candidates once observations are improved.
+
+## Step 9: road-v2, 20-generation experiment
+
+Same setup as the baseline (100 individuals, Summer 1, seed 12345, same GA settings, same network
+hidden layers), with the step-9 changes ([ROAD_AWARE_OBSERVATIONS.md](ROAD_AWARE_OBSERVATIONS.md)):
+road-relative observations (64 inputs instead of 47) and road progress instead of straight-line
+progress. Run: `data/runs/road-v2-g20-summer1-seed12345/` (6 workers, 2 min 6 s).
+
+```bash
+npm run train -- --run road-v2-g20-summer1-seed12345 --generations 20
+```
+
+**Fitness numbers are not directly comparable across the two runs**: the progress metric changed on
+purpose. Checkpoints (registered by the physics) and distance along the road are comparable.
+
+### Generation 19 (the 20th generation) vs the baseline's generation 19
+
+| | Baseline (gates-v1) | road-v2 |
+| --- | --- | --- |
+| Best fitness | 1,950.0 | 2,938.6 |
+| Average fitness | 588.0 | 916.4 |
+| Median fitness | 354.9 | 1,034.9 |
+| Max progress (gates) | 2.000 | 2.989 |
+| Checkpoints (best / most by anyone) | 2 / 2 | 2 / 2 |
+| Furthest road distance of the best (m) | ≈ 575 (flies off at the ramp / first bend) | **833** (4 m before checkpoint 3 at 837 m) |
+| Completions | 0 | 0 |
+| Best time | — | — |
+| Stalled / crashed | 81 / 19 | 78 / 22 |
+| First generation with a car past checkpoint 2 | 18 | 16 |
+| Time for 20 generations | 105 s | 125 s |
+
+All-time best improvements (road-v2): 0: 542.2 · 1: 1,195.2 · 2: 1,663.5 · 4: 1,745.4 · 7: 1,844.2 ·
+11: 1,934.5 · 16: 2,131.2 · 18: 2,938.6.
+
+### Where the generation bests ended (generations 0–19, re-simulated, by road distance)
+
+| Zone (Summer 1 road distance) | Baseline | road-v2 |
+| --- | --- | --- |
+| before checkpoint 1 (< 144 m) | 1 | 1 |
+| checkpoint 1 → checkpoint 2 (144–520 m) | 11 | 15 |
+| ramp + banked U-turn (545–700 m) | 8 (all ≤ 575 m: launched off the ramp or first bend) | 2 (648 m, inside the U-turn) |
+| after the U-turn, before checkpoint 3 (700–837 m) | 0 | 2 (833 m, at the gate) |
+
+### Checkpoint 2 → checkpoint 3, inspected
+
+`npm run analyze:turn -- --run road-v2-g20-summer1-seed12345 --generation 19` plus the viewer
+(PolyTrack's renderer) for the best driver, g0018-088:
+
+| Time | Road distance | What happens (measured, and seen in the viewer) |
+| --- | --- | --- |
+| 12.8 s | 520 m | passes checkpoint 2 at 172 km/h |
+| 13.0–13.5 s | 528–550 m | the lookahead already reads the U-turn (road heading +62° to +68° at 50 m, curvature 0.063 /m); car still full throttle, heading drifting right |
+| 13.75 s | 561 m | brakes (175 → 156 km/h) before the first bend |
+| 14.0–14.75 s | 570–596 m | **steers right through the first bend**, braking, 146 → 108 km/h, onto the 26° bank |
+| 16.0 s | 630 m | drives along the banked straight at 133 km/h (viewer: upright on the tilted surface, outer wall on its left) |
+| 17.0–18.5 s | 659–688 m | second bend, high on the curved bank, 1–3 m above the measured left edge, so progress pauses (see limitations) |
+| 18.75–21.25 s | 688–774 m | back on the road, out of the U-turn, accelerating to 185 km/h towards checkpoint 3 |
+| 21.75–22.3 s | 808–824 m | turns hard towards the narrower checkpoint-3 road, sliding sideways at ~140 km/h |
+| 22.5 s | 828 m | hits the left side of the checkpoint-3 entrance (26 km/h) |
+| 24.0 s | 833 m | stopped on top of the left wall, 4 m before the gate line, no wheel contact; the stall rule ends the run at 25.2 s |
+
+Answers to step 9's questions, from this replay:
+
+- **Recognizes the turn earlier?** Yes. The turn is visible in the lookahead from the gate on, and the
+  car brakes about 10 m before the first bend (the baseline's best braked right at the gate and stopped).
+- **Steers before entering it?** Partly. It brakes and starts steering right at the bend itself
+  (570 m), not before it; the heading drifts right from 13.0 s.
+- **Maintains control through the banked section?** Yes, through both bends of the U-turn at
+  90–145 km/h.
+- **Reaches checkpoint 3?** **No.** It crashes into the left side of the checkpoint-3 entrance 4 m
+  short, after approaching too fast and too sideways.
+- **Still crashes at the same location?** No. The failure point moved ~310 m further along the
+  road, from just after checkpoint 2 to the checkpoint-3 entrance.
+
+### Did the plateau move?
+
+Yes, in this 20-generation run: the best driver's road distance went from ≈ 575 m (baseline,
+generation 19) to 833 m, through the turn that stopped the baseline for 80 generations. This is
+one seed and 20 generations; a longer run is needed to see where (and whether) the new plateau
+forms, and whether checkpoint 3 and the finish (after a jump) are reached.
+
+### Remaining issues and exploits found
+
+- **No reversing exploit**: the best driver never drives backwards (0 %); reversing earns nothing under road-v2.
+- **Edge measurement on curved banking**: on the upper part of the U-turn's second bend, the
+  measured left edge is 1–3 m inside the real drivable surface, so a car riding high on the bank is
+  counted as off-road and its progress pauses (≈ 1.5 s here). It under-credits rather than inventing
+  progress, and the car resumed counting when it came down.
+- **Wedged at a gate**: the run ends with the car resting on a wall with no wheel contact. The
+  crash policy (airborne > 5 s) did not fire within the 3 s stall window; the stall rule ended it
+  correctly with no extra progress (road progress last improved at 22.2 s).
+- **Coverage**: road-v2 is available on Summer 1 and Winter 1 among the official tracks (wall-ride
+  parts elsewhere; ROAD_AWARE_OBSERVATIONS.md §Supported tracks).

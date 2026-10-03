@@ -3,6 +3,7 @@
  * and evaluates the individuals it is sent, one at a time.
  */
 import { parentPort, workerData } from "node:worker_threads";
+import { PolyTrackRoad } from "../polytrack/track/PolyTrackRoad.js";
 import { EpisodeEvaluator } from "./Evaluator.js";
 import type { WorkerInit, WorkerRequest, WorkerResponse } from "./WorkerPool.js";
 
@@ -11,7 +12,8 @@ if (port === null) throw new Error("evaluationWorker must run in a worker thread
 const post = (m: WorkerResponse): void => port.postMessage(m);
 
 try {
-  const { config, deps } = workerData as WorkerInit;
+  const { config, deps, road } = workerData as WorkerInit;
+  if (road !== null) PolyTrackRoad.prime(deps.track, road);
   const evaluator = new EpisodeEvaluator(config, deps, { reuseSimulation: true });
   port.on("message", (m: WorkerRequest) => {
     evaluator.evaluate(m.weights).then(
