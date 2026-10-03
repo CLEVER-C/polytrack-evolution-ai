@@ -39,6 +39,18 @@ export class Population {
     return new Population(0, individuals);
   }
 
+  /**
+   * Generation 0 from existing weights (e.g. the population evolved on the
+   * previous track of a curriculum). Must supply exactly `populationSize` weight arrays.
+   */
+  static fromWeights(config: EvolutionConfig, weights: readonly ArrayLike<number>[]): Population {
+    if (weights.length !== config.populationSize) throw new Error(`Expected ${config.populationSize} weight arrays, got ${weights.length}`);
+    const individuals = weights.map<Individual>((w, i) => ({
+      id: individualId(0, i), generation: 0, origin: "transfer", parentId: null, mutatedWeights: 0, weights: Float64Array.from(w), fitness: null, stats: null,
+    }));
+    return new Population(0, individuals);
+  }
+
   /** Individuals sorted best-first. Throws if any are unevaluated. */
   ranked(): Individual[] {
     if (this.individuals.some((ind) => ind.fitness === null)) throw new Error(`Generation ${this.generation} is not fully evaluated`);

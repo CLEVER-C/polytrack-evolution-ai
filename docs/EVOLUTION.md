@@ -102,3 +102,43 @@ Loading refuses a different PolyTrack version or a changed track.
 About 0.1–0.15 s per individual for short episodes, including ~70 ms to create a fresh physics instance.
 Cars that drive the full 60 s cost ~2 s each, so a 100-individual generation takes roughly 15 s early
 on (most random cars stall within seconds) and up to a few minutes once most cars survive.
+
+## Track curriculum (beat the record, then move on)
+
+```bash
+npm run train -- --curriculum --generations 50                 # 17 official tracks in game order
+npm run train -- --curriculum --tracks summer1,summer2,summer3  # custom list
+npm run train -- --curriculum --generations 50 --resume
+```
+
+`Curriculum` (`src/evolution/Curriculum.ts`) trains one track at a time. After each generation it
+checks whether the generation best **finished faster than the track's target time**
+(`bestTime < target`, strictly). When it does, the curriculum:
+
+1. records the result (track, target, achieved time, generation, individual, replay file);
+2. moves to the next track, **carrying the evolved population over** as generation 0 there
+   (origin `transfer`), with a per-track seed derived from the base seed.
+
+All tracks share the same observation size and network, so the weights transfer directly. A track
+without a target time never advances. State is saved after every generation
+(`data/runs/<run>/curriculum.json` plus `<NN>-<track>/checkpoint.json`), and `--resume` re-reads the
+target file, so times can be added later.
+
+### Target times
+
+Targets live in `data/target-times.json` (gitignored), in seconds:
+
+```json
+{ "version": 1, "tracks": { "summer1": { "seconds": 31.234, "source": "leaderboard #1 (verified), 2026-10-02" } } }
+```
+
+Copy the #1 **verified** time from the in-game leaderboard. Leaderboard times are in the same unit
+as ours (1 frame = 1 ms of the same physics), so they compare directly.
+
+**Why targets are entered by hand:** the game reads leaderboards from
+`GET https://vps.kodub.com/v6/leaderboard?version=0.6.3&trackId=<sha256 of track data>&skip=&amount=&onlyVerified=`
+(response `{ total, entries: [{ id, userId, nickname, frames, time, carStyle, verifiedState, countryCode }], userEntry }`),
+and top runs from `/v6/recordings?ids=`. The server answers **403 Forbidden** to requests that don't
+come from the official game ("Unofficial versions of the game cannot access the leaderboard"), so this
+project does not fetch them automatically and does not work around that block. AI runs must never be
+submitted to the real leaderboards.

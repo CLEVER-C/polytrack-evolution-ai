@@ -21,8 +21,8 @@ export interface EpisodeStats {
   readonly decisions: number;
 }
 
-/** How an individual came to exist. */
-export type IndividualOrigin = "random" | "elite" | "offspring";
+/** How an individual came to exist. "transfer" = carried over from another track (curriculum). */
+export type IndividualOrigin = "random" | "elite" | "offspring" | "transfer";
 
 export interface Individual {
   /** Unique within a run: `g<generation born>-<index>`. Elites keep their id. */

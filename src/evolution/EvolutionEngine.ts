@@ -10,6 +10,7 @@
  */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
+import { NeuralNetwork } from "../ai/NeuralNetwork.js";
 import { SeededRandom } from "../ai/random.js";
 import { loadCapturedGameData, loadCapturedInit, loadCapturedTrack } from "../polytrack/local/capture.js";
 import { POLYTRACK_TARGET_VERSION } from "../polytrack/PolyTrackInterface.js";
@@ -127,6 +128,14 @@ export class EvolutionEngine {
   initialize(): void {
     if (this.population !== null) throw new Error("Already initialized");
     this.population = Population.random(this.config, this.evaluator.architecture, this.rng);
+  }
+
+  /** Starts generation 0 from given weights instead of random ones (curriculum transfer). */
+  initializeFrom(weights: readonly ArrayLike<number>[]): void {
+    if (this.population !== null) throw new Error("Already initialized");
+    const expected = NeuralNetwork.parameterCount(this.evaluator.architecture);
+    if (weights.some((w) => w.length !== expected)) throw new Error(`Transferred weights must have ${expected} values (this network architecture)`);
+    this.population = Population.fromWeights(this.config, weights);
   }
 
   /** Evaluates the current generation, records results/replay, then breeds the next generation. */
