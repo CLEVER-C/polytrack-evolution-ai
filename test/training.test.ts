@@ -97,6 +97,8 @@ describe("training configuration", () => {
     assert.equal(parseTrainArgs(["--workers", "auto"]).overrides.workers, "auto");
     assert.equal(parseTrainArgs(["--watch-each-generation"]).watchEachGeneration, true);
     assert.throws(() => parseTrainArgs(["--generatons", "5"]), /Unknown option --generatons/);
+    // npm.cmd from PowerShell escapes arguments for cmd.exe with carets.
+    assert.equal(parseTrainArgs(["--track", "^Summer^ 1^"]).overrides.track, "Summer 1");
     assert.throws(() => parseTrainArgs(["--seed", "abc"]), /integer/);
     assert.throws(() => applyOverrides(base, { generations: 0 }), /generations must be a positive integer/);
   });
