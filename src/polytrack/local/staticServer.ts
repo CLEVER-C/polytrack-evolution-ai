@@ -3,7 +3,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { extname, join, normalize, sep } from "node:path";
 
-const MIME: Record<string, string> = {
+export const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".json": "application/json",
@@ -15,6 +15,9 @@ const MIME: Record<string, string> = {
   ".jpg": "image/jpeg",
   ".woff2": "font/woff2",
   ".track": "text/plain; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".mp3": "audio/mpeg",
+  ".webp": "image/webp",
 };
 
 export interface StaticServer {

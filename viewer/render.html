@@ -1,0 +1,19 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>PolyTrack Renderer</title>
+<!-- The game's relative asset paths (models/, images/, lib/) resolve against the unmodified game files. -->
+<base href="/game/">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
+  canvas#screen { display: block; width: 100%; height: 100%; }
+  /* The game's own menus are not used by the viewer. */
+  #ui, #transition-layer { display: none !important; }
+</style>
+<!-- Must run before main.bundle.js: hooks the game's webpack module registry. -->
+<script src="/viewer/render.js"></script>
+<script defer src="/game/main.bundle.js"></script>
+</head>
+<body><canvas id="screen"></canvas><div id="ui"></div><div id="transition-layer"></div></body>
+</html>

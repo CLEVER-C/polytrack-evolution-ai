@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PolyTrack Evolution AI</title>
+<link rel="stylesheet" href="/viewer/style.css">
+<script type="module" src="/viewer/app.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <h1>POLYTRACK EVOLUTION AI</h1>
+  <label class="run-picker">Run
+    <select id="run-select"></select>
+  </label>
+</header>
+
+<main class="layout">
+  <aside class="panel generations">
+    <div class="panel-title">Generations <span id="generation-count" class="muted"></span></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Gen</th><th>Best</th><th>Avg</th><th>Time</th><th>CP</th></tr></thead>
+        <tbody id="generation-rows"></tbody>
+      </table>
+    </div>
+  </aside>
+
+  <section class="stage">
+    <div class="stats">
+      <div><span class="label">Generation</span><span id="stat-generation" class="value">—</span></div>
+      <div><span class="label">Best Fitness</span><span id="stat-best" class="value">—</span></div>
+      <div><span class="label">Average Fitness</span><span id="stat-average" class="value">—</span></div>
+      <div><span class="label">Best Time</span><span id="stat-time" class="value">—</span></div>
+      <div><span class="label">Checkpoints</span><span id="stat-checkpoints" class="value">—</span></div>
+    </div>
+
+    <div class="screen">
+      <iframe id="renderer" src="/viewer/render.html" title="PolyTrack renderer"></iframe>
+      <div id="screen-message" class="screen-message">Loading PolyTrack…</div>
+      <div id="hud" class="hud hidden"><span id="hud-speed">0</span> km/h · <span id="hud-time">0.000</span> s</div>
+    </div>
+
+    <div class="controls">
+      <div class="buttons">
+        <button id="btn-play" disabled>▶ PLAY</button>
+        <button id="btn-pause" disabled>⏸ PAUSE</button>
+        <button id="btn-restart" disabled>↻ RESTART</button>
+        <button id="btn-step" disabled title="Advance one decision (10 physics ticks)">⏭ STEP</button>
+        <span class="divider"></span>
+        <span class="label">Playback</span>
+        <span id="speed-buttons" class="speeds"></span>
+        <span class="divider"></span>
+        <label class="label">Camera
+          <select id="camera-select"><option value="orbit">Chase</option><option value="cockpit">Cockpit</option></select>
+        </label>
+      </div>
+      <div class="progress-row">
+        <span class="label">Progress</span>
+        <div class="progress"><div id="progress-fill" class="progress-fill"></div></div>
+        <span id="progress-text" class="progress-text">0%</span>
+      </div>
+      <div class="watch-row">
+        <button id="btn-watch" class="toggle" aria-pressed="false">WATCH EVOLUTION</button>
+        <label class="label">Pause between generations
+          <input id="watch-pause" type="number" min="0" max="30" step="0.5" value="1.5"> s
+        </label>
+        <span id="watch-status" class="muted"></span>
+      </div>
+      <div id="error" class="error hidden"></div>
+    </div>
+  </section>
+
+  <aside class="side">
+    <section class="panel dashboard">
+      <div class="panel-title">Live training <span id="live-phase" class="badge">offline</span></div>
+      <dl id="dashboard" class="dashboard-grid">
+        <dt>Generation</dt><dd id="live-generation">—</dd>
+        <dt>Population</dt><dd id="live-population">—</dd>
+        <dt>Generation best</dt><dd id="live-generation-best">—</dd>
+        <dt>All-time best</dt><dd id="live-alltime-best">—</dd>
+        <dt>Average fitness</dt><dd id="live-average">—</dd>
+        <dt>Completed</dt><dd id="live-completed">—</dd>
+        <dt>Best time</dt><dd id="live-best-time">—</dd>
+        <dt>Mutation rate</dt><dd id="live-mutation">—</dd>
+        <dt>Training speed</dt><dd id="live-speed">—</dd>
+      </dl>
+      <div id="live-note" class="muted small"></div>
+    </section>
+
+    <section class="panel graph">
+      <div class="panel-title">Fitness <span class="legend"><i class="swatch best"></i>best <i class="swatch avg"></i>average</span></div>
+      <canvas id="fitness-graph" height="220"></canvas>
+      <div class="muted small">Click the graph to open that generation.</div>
+    </section>
+  </aside>
+</main>
+</body>
+</html>

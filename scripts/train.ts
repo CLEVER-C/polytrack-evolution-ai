@@ -12,6 +12,8 @@
  *   the default track list is the 17 official tracks in game order.
  *
  * Output (gitignored): data/runs/<run>/. A checkpoint is saved after every generation.
+ * status.json is updated while training (at most once per second) for the viewer's
+ * live dashboard (npm run viewer). --dashboard also prints that status as a box each generation.
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -20,6 +22,7 @@ import { createEvolutionConfig, type EvolutionConfigOverrides } from "../src/evo
 import { EvolutionEngine, type GenerationResult } from "../src/evolution/EvolutionEngine.js";
 import { loadTargetTimes, TARGET_TIMES_PATH } from "../src/evolution/TargetTimes.js";
 import { PROJECT_ROOT } from "../src/polytrack/local/paths.js";
+import { formatDashboard, TrainingStatusWriter } from "../src/visualization/TrainingStatus.js";
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -37,6 +40,24 @@ function overrides(): EvolutionConfigOverrides {
     ...(population !== undefined ? { populationSize: population } : {}),
     ...(maxTicks !== undefined ? { episode: { maxTicks } } : {}),
   };
+}
+
+/** Live status for the viewer; marks the run "stopped" on exit (including Ctrl+C). */
+let activeStatus: TrainingStatusWriter | null = null;
+process.once("SIGINT", () => {
+  activeStatus?.stopSync();
+  process.exit(130);
+});
+
+function statusFor(engine: EvolutionEngine, runName: string): TrainingStatusWriter {
+  const writer = new TrainingStatusWriter(engine.outputDirectory!, engine.currentConfig, { runName }, engine.getHistory());
+  engine.setObserver(writer);
+  activeStatus = writer;
+  return writer;
+}
+
+function report(r: GenerationResult, target: number | null, status: TrainingStatusWriter, prefix = ""): void {
+  console.log(flag("dashboard") ? formatDashboard(status.snapshot("idle")) : prefix + line(r, target));
 }
 
 function line(r: GenerationResult, target: number | null): string {
@@ -68,11 +89,14 @@ async function trainSingleTrack(generations: number): Promise<void> {
     console.log(`New run ${run}: population ${config.populationSize}, track ${track}, seed ${seed}, ${engine.parameterCount} weights per network`);
   }
   const target = targets[engine.currentConfig.track] ?? null;
+  const status = statusFor(engine, run);
   for (let i = 0; i < generations; i++) {
+    status.setConfig(engine.currentConfig);
     const r = await engine.runGeneration();
     await engine.saveCheckpoint(checkpointPath);
-    console.log(line(r, target));
+    report(r, target, status);
   }
+  await status.stop();
   const best = engine.getBestIndividual()!;
   console.log(`All-time best: ${best.id} fitness ${best.fitness!.toFixed(2)} · output ${outputDir}`);
 }
@@ -94,14 +118,24 @@ async function trainCurriculum(generations: number): Promise<void> {
   const missing = curriculum.getState().tracks.filter((t) => curriculum.getState().targetTicks[t] === undefined);
   if (missing.length > 0) console.log(`No target time for: ${missing.join(", ")}. Those tracks will not advance until you add them to ${TARGET_TIMES_PATH} and --resume.`);
 
+  let status: TrainingStatusWriter | null = null;
+  let activeEngine: EvolutionEngine | null = null;
   for (let i = 0; i < generations && !curriculum.isComplete; i++) {
+    const engine = curriculum.getEngine();
+    if (status === null || activeEngine !== engine) {
+      await status?.stop();
+      status = statusFor(engine, `${run}/${engine.outputDirectory!.split(/[\/]/).pop()}`);
+      activeEngine = engine;
+    }
+    status.setConfig(engine.currentConfig);
     const step = await curriculum.runGeneration();
-    console.log(`[${step.track}] ${line(step.result, step.targetTicks)}`);
+    report(step.result, step.targetTicks, status, `[${step.track}] `);
     if (step.beaten !== null) {
       console.log(`*** Beat ${step.track}: ${seconds(step.beaten.achievedTicks)} < target ${seconds(step.beaten.targetTicks)} (replay ${step.beaten.replayFile}) ***`);
       console.log(step.advancedTo !== null ? `Moving on to ${step.advancedTo} with the evolved population.` : "Curriculum complete!");
     }
   }
+  await status?.stop();
   console.log(`Output: ${outputDir}`);
 }
 
