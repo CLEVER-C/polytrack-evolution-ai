@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
 import { createEvolutionConfig, type EvolutionConfig } from "../src/evolution/EvolutionConfig.js";
-import { EvolutionEngine, type GenerationResult } from "../src/evolution/EvolutionEngine.js";
+import { deterministicResult, EvolutionEngine, type GenerationResult } from "../src/evolution/EvolutionEngine.js";
 import type { Individual } from "../src/evolution/Individual.js";
 import { trackProgress } from "../src/evolution/Fitness.js";
 import { loadReplay, verifyReplay } from "../src/evolution/Replay.js";
@@ -26,7 +26,7 @@ const CONFIG: EvolutionConfig = createEvolutionConfig({
 const GENERATIONS = 3;
 
 /** History without wall-clock time and output file location, for determinism comparisons. */
-const deterministic = (h: readonly GenerationResult[]) => h.map(({ evaluationMs: _ms, replayFile: _file, ...rest }) => rest);
+const deterministic = (h: readonly GenerationResult[]) => h.map(deterministicResult);
 const weightsOf = (individuals: readonly Individual[]) => individuals.map((i) => [i.id, Array.from(i.weights)]);
 
 async function deps() {
@@ -120,7 +120,8 @@ describe("EvolutionEngine on real PolyTrack (10 individuals × 3 generations)", 
 
   test("a replay is written for each generation best and reproduces the run both ways", async () => {
     for (const r of results) assert.ok(r.replayFile && existsSync(join(dir, r.replayFile)), `missing ${r.replayFile}`);
-    assert.ok(existsSync(join(dir, "replays", "best.json")));
+    assert.ok(existsSync(join(dir, "best-ever.json")));
+    for (const r of results) assert.ok(existsSync(join(dir, "best", `generation-${String(r.generation).padStart(4, "0")}.json`)));
     const replay = await loadReplay(join(dir, results[2]!.replayFile!));
     assert.equal(replay.polytrackVersion, "0.6.3");
     assert.equal(replay.trackId, "summer6");
@@ -131,7 +132,7 @@ describe("EvolutionEngine on real PolyTrack (10 individuals × 3 generations)", 
     assert.equal(replay.controls.length, replay.stats.decisions);
     assert.equal(replay.fitness, results[2]!.bestFitness);
     assert.deepEqual(await verifyReplay(replay, engine.getEvaluator()), { networkReproduces: true, controlsReproduce: true });
-    const history = JSON.parse(await readFile(join(dir, "history.json"), "utf8")) as GenerationResult[];
+    const history = JSON.parse(await readFile(join(dir, "generations.json"), "utf8")) as GenerationResult[];
     assert.equal(history.length, 3);
   });
 

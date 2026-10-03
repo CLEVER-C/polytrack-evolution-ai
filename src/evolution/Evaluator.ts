@@ -43,14 +43,25 @@ export function decodeControls(digit: string): ControlInput {
   return { accelerate: (v & 1) !== 0, brake: (v & 2) !== 0, steerLeft: (v & 4) !== 0, steerRight: (v & 8) !== 0 };
 }
 
+export interface EvaluatorOptions {
+  /**
+   * Keep one physics instance and start every episode with reset() (a new car at
+   * the start line) instead of creating a fresh simulation. Results are identical
+   * (tested); it saves the ~70 ms simulation start-up per episode.
+   */
+  readonly reuseSimulation?: boolean;
+}
+
 export class EpisodeEvaluator {
   readonly trackModel: TrackModel;
   readonly architecture: NetworkArchitecture;
   private readonly encoder: TrackObservationEncoder;
+  private shared: LocalPolyTrack | null = null;
 
   constructor(
     private readonly config: EvolutionConfig,
     private readonly deps: EvaluatorDependencies,
+    private readonly options: EvaluatorOptions = {},
   ) {
     this.trackModel = new PolyTrackTrack(deps.track, deps.gameData).toTrackModel();
     this.encoder = new TrackObservationEncoder(this.trackModel, { lookaheadGates: config.network.lookaheadGates });
@@ -75,8 +86,7 @@ export class EpisodeEvaluator {
   private async run(decide: (state: VehicleState, decision: number) => ControlInput): Promise<EvaluationResult> {
     const { episode } = this.config;
     const model = this.trackModel;
-    const polytrack = new LocalPolyTrack({ init: this.deps.init, gameData: this.deps.gameData }); // fresh simulation
-    await polytrack.connect(this.deps.track);
+    const polytrack = await this.simulation();
     try {
       const spawn = await polytrack.reset();
       const tracker = new ProgressTracker(model, episode.stallEpsilon);
@@ -121,7 +131,22 @@ export class EpisodeEvaluator {
       };
       return { stats, fitness: computeFitness(stats, this.config.fitness, episode), controls };
     } finally {
-      await polytrack.disconnect();
+      if (!this.options.reuseSimulation) await polytrack.disconnect();
     }
+  }
+
+  /** Releases the shared physics instance (reuseSimulation). */
+  async dispose(): Promise<void> {
+    await this.shared?.disconnect();
+    this.shared = null;
+  }
+
+  /** The physics for one episode: the shared instance, or a fresh one. reset() then places a new car. */
+  private async simulation(): Promise<LocalPolyTrack> {
+    if (this.options.reuseSimulation && this.shared !== null) return this.shared;
+    const polytrack = new LocalPolyTrack({ init: this.deps.init, gameData: this.deps.gameData });
+    await polytrack.connect(this.deps.track);
+    if (this.options.reuseSimulation) this.shared = polytrack;
+    return polytrack;
   }
 }

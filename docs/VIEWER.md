@@ -11,9 +11,9 @@ computed by **the same unmodified PolyTrack physics used in training**.
                 real simulation (LocalPolyTrack: unmodified worker + WASM in Node)
                        ▼
              ┌───────────────────┐
-             │ Generation Result │   data/runs/<run>/history.json
+             │ Generation Result │   data/runs/<run>/generations.json
              └─────────┬─────────┘
-                  best replay       data/runs/<run>/replays/gen-NNNN-<id>.json
+                  best replay       data/runs/<run>/replays/generation-NNNN.json
                        ▼
              ┌───────────────────┐
              │   Replay Player   │   src/viewer/ReplayPlayer.ts: recorded controls → real physics, tick by tick
@@ -97,7 +97,7 @@ simulated, just not drawn.
 
 ## Generation navigation
 
-The left table lists every generation of the selected run, from `history.json`:
+The left table lists every generation of the selected run, from `generations.json`:
 generation number, best fitness, average fitness, best completion time (green when the best
 individual finished; `—` otherwise) and checkpoints reached by the best individual
 (hover a row for the individual id and how many of the population finished).
@@ -112,7 +112,7 @@ refused. Generation N can never display generation N+1's data.
 
 ### Runs
 
-A run is any folder under `data/runs/` with a `history.json`: a single-track run
+A run is any folder under `data/runs/` with a `generations.json` (or `history.json` in older runs): a single-track run
 (`summer1-seed1`) or one track of a curriculum (`curriculum-seed1/01-summer1`). Pick it in the
 top-right dropdown or with `--run`.
 
@@ -134,7 +134,11 @@ stop. Playback speed applies throughout (8x is good for long runs).
 While `npm run train` runs, it updates `data/runs/<run>/status.json`, and the right panel shows:
 current generation (with progress through the population), population size, generation best,
 all-time best, average fitness, completed (finished) count, best time, mutation rate and
-strength, and training speed in physics ticks per second. The badge reads `evaluating`,
+strength, training speed in physics ticks per second and agents per second, worker threads, and
+elapsed time.
+
+`npm run train:watch` starts training **and** this viewer (as a separate process) in WATCH EVOLUTION
+mode on that run, so you can watch generation 0, 1, 2, … as they are produced. The badge reads `evaluating`,
 `idle` (between generations), `stopped`, or `stale` when no update has arrived for a minute.
 
 `npm run train -- --dashboard` prints the same status as a box after each generation:

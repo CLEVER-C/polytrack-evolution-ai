@@ -32,6 +32,8 @@ export interface TrainingStatus {
   readonly averageFitness: number | null;
   /** Individuals of `generation` that finished the race so far. */
   readonly completed: number;
+  /** Same as `completed`. */
+  readonly finishedCount: number;
   readonly allTimeBestFitness: number | null;
   /** Fastest finish of the whole run, in ticks (ms). */
   readonly bestTime: number | null;
@@ -39,6 +41,12 @@ export interface TrainingStatus {
   readonly mutationStrength: number;
   /** Physics ticks simulated per wall-clock second in `generation` so far. */
   readonly ticksPerSecond: number;
+  /** Individuals evaluated per wall-clock second in `generation` so far. */
+  readonly agentsPerSecond: number;
+  /** Milliseconds since this training session started. */
+  readonly elapsedMs: number;
+  /** Evaluation worker threads (0 = evaluated in the main thread). */
+  readonly workers: number;
   readonly lastGeneration: GenerationResult | null;
   readonly updatedAt: string;
 }
@@ -47,6 +55,8 @@ export interface TrainingStatusOptions {
   readonly runName: string;
   /** Minimum milliseconds between writes during a generation. */
   readonly minIntervalMs?: number;
+  /** Evaluation worker threads, reported as-is. */
+  readonly workers?: number;
 }
 
 /**
@@ -61,6 +71,7 @@ export class TrainingStatusWriter implements TrainingObserver {
   private completed = 0;
   private ticks = 0;
   private generationStarted = performance.now();
+  private readonly sessionStarted = performance.now();
   private allTimeBest: number | null = null;
   private bestTime: number | null = null;
   private lastGeneration: GenerationResult | null = null;
@@ -155,7 +166,11 @@ export class TrainingStatusWriter implements TrainingObserver {
       bestTime: this.bestTime,
       mutationRate: this.config.mutation.rate,
       mutationStrength: this.config.mutation.strength,
+      finishedCount: this.completed,
       ticksPerSecond: elapsed > 0 ? Math.round(this.ticks / elapsed) : 0,
+      agentsPerSecond: elapsed > 0 ? Math.round((this.evaluated / elapsed) * 100) / 100 : 0,
+      elapsedMs: Math.round(performance.now() - this.sessionStarted),
+      workers: this.options.workers ?? 0,
       lastGeneration: this.lastGeneration,
       updatedAt: new Date().toISOString(),
     };
@@ -210,7 +225,9 @@ export function formatDashboard(s: TrainingStatus): string {
     ["Completed", `${s.completed} / ${s.populationSize}`],
     ["Best time", s.bestTime === null ? "—" : `${(s.bestTime / 1000).toFixed(3)} s`],
     ["Mutation rate", `${s.mutationRate} (strength ${s.mutationStrength})`],
-    ["Training speed", `${s.ticksPerSecond.toLocaleString("en-US")} ticks/sec`],
+    ["Training speed", `${s.ticksPerSecond.toLocaleString("en-US")} ticks/sec · ${s.agentsPerSecond} agents/sec`],
+    ["Workers", String(s.workers)],
+    ["Elapsed", formatDuration(s.elapsedMs)],
   ];
   const label = Math.max(...rows.map(([k]) => k.length));
   const lines = rows.map(([k, v]) => ` ${k.padEnd(label)}  ${v} `);
@@ -218,4 +235,13 @@ export function formatDashboard(s: TrainingStatus): string {
   const width = Math.max(title.length, ...lines.map((l) => l.length));
   const bar = "─".repeat(width);
   return [`┌${bar}┐`, `│${title.padEnd(width)}│`, `├${bar}┤`, ...lines.map((l) => `│${l.padEnd(width)}│`), `└${bar}┘`].join("\n");
+}
+
+/** 3725000 → "1h 2m 5s". */
+export function formatDuration(ms: number): string {
+  const total = Math.round(ms / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const sec = total % 60;
+  return h > 0 ? `${h}h ${m}m ${sec}s` : m > 0 ? `${m}m ${sec}s` : `${sec}s`;
 }

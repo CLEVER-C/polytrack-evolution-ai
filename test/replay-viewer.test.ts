@@ -135,12 +135,12 @@ describe("Replay viewer on real PolyTrack", { skip: SKIP_WITHOUT_GAME }, () => {
     // A history entry pointing at another generation's replay is rejected, not shown.
     const tampered = history.map((h) => ({ ...h }));
     tampered[0] = { ...tampered[0]!, replayFile: history[1]!.replayFile };
-    const original = await readFile(join(runDir, "history.json"), "utf8");
-    await writeFile(join(runDir, "history.json"), JSON.stringify(tampered));
+    const original = await readFile(join(runDir, "generations.json"), "utf8");
+    await writeFile(join(runDir, "generations.json"), JSON.stringify(tampered));
     try {
       await assert.rejects(catalog.loadGenerationReplay(RUN, 0), /does not belong to generation 0/);
     } finally {
-      await writeFile(join(runDir, "history.json"), original);
+      await writeFile(join(runDir, "generations.json"), original);
     }
     await assert.rejects(catalog.loadGenerationReplay(RUN, 99), /no generation 99/);
     assert.throws(() => catalog.runDir("../outside"), /Invalid run/);

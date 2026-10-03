@@ -9,12 +9,14 @@ Population (N networks) ─► evaluate each on real PolyTrack ─► fitness �
 ```
 
 ```bash
-npm run train -- --generations 10 --population 100 --track summer1 --seed 1
-npm run train -- --generations 10 --run summer1-seed1 --resume
+npm run train                                         # configs/training.default.json
+npm run train -- --generations 100 --population 100 --seed 12345
+npm run train -- --resume
 ```
 
-Output (gitignored): `data/runs/<run>/checkpoint.json`, `history.json`, `replays/gen-NNNN-<id>.json`,
-`replays/best.json`.
+How to run training (configuration, workers, resuming, output files) is in [TRAINING.md](TRAINING.md).
+Output (gitignored): `data/runs/<run>/` with `generations.json`/`.csv`, `checkpoint.json`,
+`replays/generation-NNNN.json`, `best/generation-NNNN.json`, `best-ever.json`, `config.json`, `status.json`.
 
 ## Modules (`src/evolution/`)
 
@@ -26,7 +28,8 @@ Output (gitignored): `data/runs/<run>/checkpoint.json`, `history.json`, `replays
 | `Fitness.ts` | progress tracking and the fitness formula ([FITNESS_FUNCTION.md](FITNESS_FUNCTION.md)) |
 | `Selection.ts` | `ElitistSelection` (truncation) and `TournamentSelection`, chosen by config |
 | `Mutation.ts` | Gaussian weight mutation |
-| `Evaluator.ts` | one episode on a fresh `LocalPolyTrack`; also replays control sequences |
+| `Evaluator.ts` | one episode on `LocalPolyTrack` (a fresh simulation, or one reused with `reset()`); also replays control sequences |
+| `WorkerPool.ts`, `evaluationWorker.ts` | evaluate a population in this thread or on `worker_threads`, each with its own simulation |
 | `Replay.ts` | replay record, save/load, verification |
 | `EvolutionEngine.ts` | the loop, history, best tracking, checkpoints |
 
@@ -44,9 +47,10 @@ Output (gitignored): `data/runs/<run>/checkpoint.json`, `history.json`, `replays
 
 ## One generation
 
-1. **Evaluate** every individual in order, each on a fresh physics instance. Elites are
-   re-evaluated too and must reproduce their previous fitness exactly; otherwise the engine throws
-   (a built-in determinism check).
+1. **Evaluate** every individual, in this thread or spread over worker threads (results are
+   kept by individual index, so the worker count never changes them). Each episode starts with a
+   new car at the start line. Elites are re-evaluated too and must reproduce their previous fitness
+   exactly; otherwise the engine throws (a built-in determinism check).
 2. **Rank** by fitness (ties broken by id).
 3. **Record** the `GenerationResult` and the generation best's replay; update the all-time best.
 4. **Breed:**
@@ -72,15 +76,22 @@ and replays, and a run resumed from a checkpoint continues exactly as if it had 
 
 ## Formats
 
-**GenerationResult** (`history.json`):
+**GenerationResult** (`generations.json`; runs made before it was renamed have `history.json`):
 - generation, populationSize;
 - best / average / median / worst fitness;
 - bestIndividualId, bestTime (finish ticks or null);
 - checkpointsReached (best), maxCheckpointsReached, checkpointCount, finishedCount;
+- maxProgress (best progress by anyone), ticksEvaluated;
 - terminations by reason, eliteCount, selection, mutation;
-- replayFile, evaluationMs (the only non-deterministic field).
+- replayFile, and the wall-clock fields evaluationMs, durationMs, ticksPerSecond (the only
+  non-deterministic ones; `deterministicResult()` strips them for comparisons).
 
-**Replay** (`replays/*.json`, ~38 KB):
+**Generation best** (`best/generation-NNNN.json`): the generation's best individual (id, weights,
+fitness, episode stats), architecture, track, seed, replay path. **All-time best** (`best-ever.json`):
+generation, fitness, genome, the full replay, progress, checkpoints, finish status and time,
+PolyTrack version, track, seed; rewritten whenever the best improves.
+
+**Replay** (`replays/generation-NNNN.json`, ~40 KB):
 - identity: `polytrackVersion`, `trackId`, `trackName`, `trackSha256`, `generation`, `individualId`, `seed`;
 - the network: `architecture`, `weights`;
 - settings: `episode`, `network`, `fitnessSettings`;
@@ -105,9 +116,10 @@ best-effort output only: nothing reads it back during training. Watch replays an
 
 ## Cost
 
-About 0.1–0.15 s per individual for short episodes, including ~70 ms to create a fresh physics instance.
-Cars that drive the full 60 s cost ~2 s each, so a 100-individual generation takes roughly 15 s early
-on (most random cars stall within seconds) and up to a few minutes once most cars survive.
+One physics thread simulates about 34,000–38,000 ticks per second. Training spreads the
+population over worker threads (`--workers`, default half the logical cores); on a 12-thread laptop
+CPU a 100-individual generation takes about 3–6 s in the first generations. Measurements:
+[TRAINING_RESULTS.md](TRAINING_RESULTS.md#training-speed).
 
 ## Track curriculum (beat the record, then move on)
 
