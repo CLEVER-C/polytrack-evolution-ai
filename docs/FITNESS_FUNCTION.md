@@ -1,0 +1,91 @@
+# Fitness function
+
+Implemented in [`src/evolution/Fitness.ts`](../src/evolution/Fitness.ts) and applied by the evaluator
+([`src/evolution/Evaluator.ts`](../src/evolution/Evaluator.ts)) to one episode on the real PolyTrack
+0.6.3 physics. Every input is measured from the simulation or the game's own track data, and the
+function is pure, so the same episode always gives the same fitness.
+
+## Formula
+
+```
+fitness = progressWeight · progress
+        + (finished ? completionTimeWeight · (1 − finishTicks / maxTicks) : 0)
+        − (episode ended by "crashed" or "stalled" ? crashPenalty : 0)
+```
+
+Defaults: `progressWeight = 1000`, `completionTimeWeight = 1000`, `crashPenalty = 50`,
+`maxTicks = 60 000` (60 s).
+
+### Progress
+
+`progress` is the **best** value reached during the episode of
+
+```
+P(t) = c(t) + f(t)
+
+c(t) = checkpoints passed           (physics CarState.nextCheckpointIndex)
+       = checkpointCount + 1        once the physics reports finishFrames (finish gate passed)
+
+f(t) = clamp(1 − d(t) / L, 0, 0.999)   while not finished, else 0
+  d(t) = straight-line distance from the car's position to the centre of the nearest gate
+         that completes progress index c(t) (alternative gates: nearest one)
+  L    = length of route segment c(t): from the previous route point (start, or the gate passed)
+         to the next gate (TrackModel.route)
+```
+
+`P` is sampled after every decision (every `ticksPerStep` = 10 physics ticks). One gate is worth
+`progressWeight` points, so the integer part comes from gates the **physics** has registered and the
+fraction from how close the car has got to the next one.
+
+### Terminations
+
+| Reason | When | Penalty |
+| --- | --- | --- |
+| `finished` | physics reports `finishFrames` | none (time bonus instead) |
+| `crashed` | crash policy: upside-down > 1000 ticks or no wheel contact > 5000 ticks | `crashPenalty` |
+| `stalled` | `progress` has not improved by ≥ 0.001 gate for 3000 ticks | `crashPenalty` |
+| `maxTicks` | episode reached `maxTicks` | none |
+
+## Why it looks like this
+
+- **Progress is the primary objective.** Gates passed dominate everything: 1000 points each, while
+  the largest possible extra (time bonus) is < 1000 and the penalty is 50.
+- **Completion beats everything else on the same track.** A finished run has
+  `progress = checkpointCount + 1`. An unfinished run has at most `checkpointCount + 0.999`, so it scores
+  below any finish (verified in tests, even for a finish one tick before `maxTicks`).
+- **Race time only matters once finished.** Among finishers, faster = higher: the bonus is linear in
+  the time left before `maxTicks`.
+- **Checkpoints can only come from the physics.** The fraction is capped at 0.999, so getting close
+  to a gate without the physics registering it can never reach the next integer.
+- **Crashes and resets.** Crashing or getting stuck ends the episode early (losing all future
+  progress) and costs a small penalty, so of two equal-progress runs the one that kept driving wins.
+  The agent has **no reset key**: the backend never presses it, so respawn exploits are impossible.
+
+### Broken behaviours it does not reward
+
+| Behaviour | Result |
+| --- | --- |
+| Sitting still | progress stays 0 → `stalled` after 3 s → **−50** (worst possible score) |
+| Driving backwards / away from the next gate | `f` is clamped at 0, nothing is gained, ends `stalled` |
+| Oscillating back and forth | `progress` is a running **maximum**, so returning to a previous distance earns nothing |
+| Spinning on the spot | no distance change, ends `stalled` |
+| Hovering near a gate without passing it | capped at 0.999 of a gate |
+| Using the reset key to teleport forward | not available to the agent |
+
+## Known limitations / possible exploits
+
+- **`f` is a straight-line proxy.** PolyTrack has no road centerline (TRACK_OBSERVATIONS.md §2).
+  Route segments are a median 281 m long and roads wind between gates, so the fraction can reward
+  getting physically closer to the next gate even when the road first leads away from it, e.g.
+  cutting across terrain or falling towards it. Integer progress (real gates) is unaffected. A road
+  geometry measure (collision-mesh raycasts or a driven reference line) would make this exact.
+- **10-tick sampling.** Progress and terminations are checked every decision (10 ms), not every tick.
+  `finishTicks` itself is exact (from the physics).
+- **Thresholds are policy.** Stall and crash limits are our choices, not game data, and may need
+  tuning per track.
+
+## Determinism
+
+The function uses only deterministic inputs: physics state (byte-identical across runs) and
+captured track data. Tests confirm that elites re-evaluated in the next generation reproduce their
+fitness exactly, and that whole runs reproduce from the seed.
