@@ -17,7 +17,9 @@
     "test": "npm run build && node --test --test-timeout=300000 \"dist/test/**/*.test.js\"",
     "observe:example": "npm run build && node dist/scripts/example-observation.js",
     "agent:example": "npm run build && node dist/scripts/example-agent.js",
-    "train": "npm run build && node dist/scripts/train.js"
+    "train": "npm run build && node dist/scripts/train.js",
+    "viewer": "npm run build && node dist/scripts/viewer.js",
+    "watch:evolution": "npm run build && node dist/scripts/viewer.js --watch"
   },
   "engines": {
     "node": ">=20"

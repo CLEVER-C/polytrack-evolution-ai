@@ -97,6 +97,12 @@ and replays, and a run resumed from a checkpoint continues exactly as if it had 
 
 Loading refuses a different PolyTrack version or a changed track.
 
+**Training status** (`status.json`, ~1 KB): rewritten by `train.ts` at most once per second during a
+generation and at each generation end, for the viewer's live dashboard (generation, evaluated count,
+generation/all-time best, average, completed, best time, mutation, ticks per second). It is
+best-effort output only: nothing reads it back during training. Watch replays and the dashboard with
+`npm run viewer`; see [VIEWER.md](VIEWER.md).
+
 ## Cost
 
 About 0.1–0.15 s per individual for short episodes, including ~70 ms to create a fresh physics instance.

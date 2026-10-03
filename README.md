@@ -2,7 +2,7 @@
 
 A personal experiment: evolve neural-network drivers for [PolyTrack](https://www.kodub.com/apps/polytrack) and watch them improve generation by generation.
 
-> **Status: scaffolding only.** Every class is a typed placeholder that throws `NotImplementedError`. No AI, no genetic algorithm, and no game/browser integration exist yet.
+> **Status:** neural-network drivers evolve on the real PolyTrack 0.6.3 physics (headless, in Node), and a local viewer replays every generation's best driver with PolyTrack's own renderer.
 
 ## Architecture
 
@@ -70,6 +70,8 @@ npm run observe:example     # print a real track-relative observation
 npm run agent:example       # run an untrained neural-network driver on the real physics
 npm run train -- --generations 10 --population 100 --track summer1   # evolve drivers (resumable: --resume)
 npm run train -- --curriculum --generations 50                        # beat each track's target time, then move on
+npm run viewer                                                        # watch each generation's best driver (http://127.0.0.1:8737)
+npm run watch:evolution                                               # auto-play generation 0, 1, 2, … in the viewer
 ```
 
 The capture step needs Microsoft Edge (or Chrome with `--channel chrome`). See
@@ -77,7 +79,8 @@ The capture step needs Microsoft Edge (or Chrome with `--channel chrome`). See
 [docs/POLYTRACK_PROTOCOL.md](docs/POLYTRACK_PROTOCOL.md) for the game's simulation protocol, and
 [docs/TRACK_OBSERVATIONS.md](docs/TRACK_OBSERVATIONS.md) for track geometry and AI observations, and
 [docs/DRIVING_AGENT.md](docs/DRIVING_AGENT.md) for the neural-network driver, and
-[docs/EVOLUTION.md](docs/EVOLUTION.md) / [docs/FITNESS_FUNCTION.md](docs/FITNESS_FUNCTION.md) for training.
+[docs/EVOLUTION.md](docs/EVOLUTION.md) / [docs/FITNESS_FUNCTION.md](docs/FITNESS_FUNCTION.md) for training, and
+[docs/VIEWER.md](docs/VIEWER.md) for the replay viewer and live training dashboard.
 
 ## Roadmap
 
@@ -91,4 +94,4 @@ The capture step needs Microsoft Edge (or Chrome with `--channel chrome`). See
 - [x] Genetic algorithm (deterministic, resumable, with replays)
 - [x] Track curriculum: advance when a target (leaderboard) time is beaten
 - [x] PolyTrack integration
-- [ ] Visualization of generations
+- [x] Visualization of generations (replay viewer with PolyTrack's own renderer, live dashboard, fitness graph)

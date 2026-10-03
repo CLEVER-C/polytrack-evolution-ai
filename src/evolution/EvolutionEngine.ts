@@ -26,6 +26,7 @@ import { deserializeIndividual, serializeIndividual, type Individual, type Seria
 import { Population } from "./Population.js";
 import { createReplay, saveReplay, trackSha256, type Replay } from "./Replay.js";
 import { createSelectionStrategy } from "./Selection.js";
+import type { TrainingObserver } from "../visualization/types.js";
 
 /** Summary of one evaluated generation (serializable, for graphs). */
 export interface GenerationResult {
@@ -59,6 +60,8 @@ export interface EngineOptions {
   readonly outputDir?: string | null;
   /** Pre-loaded game data; loaded from vendor/ when omitted. */
   readonly deps?: EvaluatorDependencies;
+  /** Notified as individuals are evaluated (e.g. the live status file). Must be cheap; it does not affect results. */
+  readonly observer?: TrainingObserver | null;
 }
 
 export const CHECKPOINT_FORMAT = "polytrack-evolution-ai/checkpoint";
@@ -100,6 +103,7 @@ export class EvolutionEngine {
   private generationBest: BestRecord | null = null;
   private previousFitness = new Map<string, number>();
   private lastReplay: Replay | null = null;
+  private observer: TrainingObserver | null = null;
 
   private constructor(
     private config: EvolutionConfig,
@@ -113,11 +117,18 @@ export class EvolutionEngine {
 
   static async create(config: EvolutionConfig, options: EngineOptions = {}): Promise<EvolutionEngine> {
     const deps = options.deps ?? (await loadDependencies(config.track));
-    return new EvolutionEngine(config, deps, options.outputDir ?? null, new SeededRandom(config.seed));
+    const engine = new EvolutionEngine(config, deps, options.outputDir ?? null, new SeededRandom(config.seed));
+    engine.observer = options.observer ?? null;
+    return engine;
   }
 
   get currentConfig(): EvolutionConfig {
     return this.config;
+  }
+
+  /** Where this engine writes replays, history and checkpoints (null = in memory). */
+  get outputDirectory(): string | null {
+    return this.outputDir;
   }
 
   get parameterCount(): number {
@@ -143,6 +154,7 @@ export class EvolutionEngine {
     if (this.population === null) this.initialize();
     const population = this.population!;
     const started = performance.now();
+    this.observer?.onGenerationStart?.(population.generation);
 
     const resultsById = new Map<string, Awaited<ReturnType<EpisodeEvaluator["evaluate"]>>>();
     for (const ind of population.individuals) {
@@ -150,6 +162,7 @@ export class EvolutionEngine {
       ind.fitness = result.fitness;
       ind.stats = result.stats;
       resultsById.set(ind.id, result);
+      this.observer?.onIndividualEvaluated?.(ind);
       if (ind.origin === "elite") {
         const before = this.previousFitness.get(ind.id);
         if (before !== undefined && before !== result.fitness) {
@@ -205,6 +218,7 @@ export class EvolutionEngine {
 
     this.previousFitness = new Map(ranked.map((i) => [i.id, i.fitness!]));
     this.population = population.breed(this.config, createSelectionStrategy(this.config.selection), this.rng);
+    this.observer?.onGenerationEnd?.(result);
     return result;
   }
 
@@ -242,6 +256,11 @@ export class EvolutionEngine {
 
   getEvaluator(): EpisodeEvaluator {
     return this.evaluator;
+  }
+
+  /** Attaches (or with null, detaches) an observer for future generations. */
+  setObserver(observer: TrainingObserver | null): void {
+    this.observer = observer;
   }
 
   /** Changes mutation settings for all future generations (recorded in each GenerationResult). */
@@ -294,6 +313,7 @@ export class EvolutionEngine {
     engine.allTimeBest = checkpoint.allTimeBest;
     engine.generationBest = checkpoint.generationBest;
     engine.previousFitness = new Map(Object.entries(checkpoint.previousFitness));
+    engine.observer = options.observer ?? null;
     return engine;
   }
 
