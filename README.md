@@ -68,13 +68,15 @@ npm run verify:simulation   # check stepping, inputs, reset, state and determini
 npm test                    # contract + track-observation tests on real track data
 npm run observe:example     # print a real track-relative observation
 npm run agent:example       # run an untrained neural-network driver on the real physics
+npm run train -- --generations 10 --population 100 --track summer1   # evolve drivers (resumable: --resume)
 ```
 
 The capture step needs Microsoft Edge (or Chrome with `--channel chrome`). See
 [docs/LOCAL_SIMULATION.md](docs/LOCAL_SIMULATION.md) for how it works and the determinism results,
 [docs/POLYTRACK_PROTOCOL.md](docs/POLYTRACK_PROTOCOL.md) for the game's simulation protocol, and
 [docs/TRACK_OBSERVATIONS.md](docs/TRACK_OBSERVATIONS.md) for track geometry and AI observations, and
-[docs/DRIVING_AGENT.md](docs/DRIVING_AGENT.md) for the neural-network driver.
+[docs/DRIVING_AGENT.md](docs/DRIVING_AGENT.md) for the neural-network driver, and
+[docs/EVOLUTION.md](docs/EVOLUTION.md) / [docs/FITNESS_FUNCTION.md](docs/FITNESS_FUNCTION.md) for training.
 
 ## Roadmap
 
@@ -85,6 +87,6 @@ The capture step needs Microsoft Edge (or Chrome with `--channel chrome`). See
 - [ ] Road geometry observations (collision-mesh raycasts)
 - [ ] Toy simulator backend (fast, no game needed) to develop the AI against
 - [x] Feed-forward network + agent
-- [ ] Genetic algorithm
+- [x] Genetic algorithm (deterministic, resumable, with replays)
 - [x] PolyTrack integration
 - [ ] Visualization of generations

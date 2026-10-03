@@ -1,5 +1,6 @@
 import type { ControlInput, VehicleState } from "../environment/types.js";
-import type { EvaluatedGenome, GenerationStats } from "../evolution/types.js";
+import type { GenerationResult } from "../evolution/EvolutionEngine.js";
+import type { Individual } from "../evolution/Individual.js";
 
 /**
  * Receives events from a training run. Implementations might log to the
@@ -8,9 +9,9 @@ import type { EvaluatedGenome, GenerationStats } from "../evolution/types.js";
  */
 export interface TrainingObserver {
   onGenerationStart?(generation: number): void;
-  onEpisodeStep?(genomeId: string, state: VehicleState, input: ControlInput): void;
-  onGenomeEvaluated?(result: EvaluatedGenome): void;
-  onGenerationEnd?(stats: GenerationStats): void;
+  onEpisodeStep?(individualId: string, state: VehicleState, input: ControlInput): void;
+  onIndividualEvaluated?(individual: Individual): void;
+  onGenerationEnd?(result: GenerationResult): void;
   /** Flush/close any resources. */
   dispose?(): Promise<void>;
 }
