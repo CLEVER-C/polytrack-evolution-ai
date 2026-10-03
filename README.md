@@ -69,6 +69,7 @@ npm test                    # contract + track-observation tests on real track d
 npm run observe:example     # print a real track-relative observation
 npm run agent:example       # run an untrained neural-network driver on the real physics
 npm run train -- --generations 10 --population 100 --track summer1   # evolve drivers (resumable: --resume)
+npm run train -- --curriculum --generations 50                        # beat each track's target time, then move on
 ```
 
 The capture step needs Microsoft Edge (or Chrome with `--channel chrome`). See
@@ -88,5 +89,6 @@ The capture step needs Microsoft Edge (or Chrome with `--channel chrome`). See
 - [ ] Toy simulator backend (fast, no game needed) to develop the AI against
 - [x] Feed-forward network + agent
 - [x] Genetic algorithm (deterministic, resumable, with replays)
+- [x] Track curriculum: advance when a target (leaderboard) time is beaten
 - [x] PolyTrack integration
 - [ ] Visualization of generations

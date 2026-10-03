@@ -7,3 +7,5 @@ export * from "./Population.js";
 export * from "./Evaluator.js";
 export * from "./Replay.js";
 export * from "./EvolutionEngine.js";
+export * from "./TargetTimes.js";
+export * from "./Curriculum.js";
