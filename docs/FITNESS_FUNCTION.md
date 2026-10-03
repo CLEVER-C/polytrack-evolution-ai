@@ -81,6 +81,11 @@ fraction from how close the car has got to the next one.
 
 ## Known limitations / possible exploits
 
+**Known issue (found in step 10, not yet fixed):** the stall rule is implemented per decision. A single
+10 ms update must beat the best progress by `stallEpsilon`, rather than progress improving by that much within
+`stallTicks`. Steady forward driving slower than `0.1 × section length` m/s (189 km/h on Summer 1's last section)
+therefore counts as stalled after 3 s. Details: [TRAINING_RESULTS.md](TRAINING_RESULTS.md#road-aware-100-generation-experiment).
+
 **Confirmed in the 100-generation baseline (gates-v1):** after passing checkpoint 2 on Summer 1 the
 best driver braked, stopped and **reversed**; reversing brought it slightly closer to checkpoint 3
 in a straight line and earned +111 fitness. road-v2 removes this: progress only counts along the
