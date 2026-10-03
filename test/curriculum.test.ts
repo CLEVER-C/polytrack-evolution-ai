@@ -43,7 +43,8 @@ describe("curriculum rules", () => {
 });
 
 describe("Curriculum on real PolyTrack", { skip: SKIP_WITHOUT_GAME }, () => {
-  const baseConfig = createEvolutionConfig({ seed: 5, populationSize: 6, episode: { maxTicks: 2_000, stallTicks: 1_000 } });
+  // Explicit gates-v1: Summer 6 has wall-ride parts, so road-v2 is unavailable on it (and weights must transfer between tracks).
+  const baseConfig = createEvolutionConfig({ seed: 5, populationSize: 6, episode: { maxTicks: 2_000, stallTicks: 1_000 }, network: { observation: "gates-v1" }, fitness: { progressMetric: "gates-v1" } });
   const loadDependencies = async (track: string) => ({ init: await getInit(), gameData: await getGameData(), track: await getTrack(track) });
 
   test("trains the current track, does not advance without beating the target, carries the population over on advance, resumes", async () => {

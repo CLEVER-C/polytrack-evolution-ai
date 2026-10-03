@@ -42,7 +42,8 @@ Output (gitignored): `data/runs/<run>/` with `generations.json`/`.csv`, `checkpo
 | `selection` | `{ type: "elitist", parentFraction: 0.2 }` or `{ type: "tournament", tournamentSize }` |
 | `mutation` | `{ rate: 0.1, strength: 0.2 }` |
 | `episode` | `maxTicks 60 000`, `ticksPerStep 10`, `stallTicks 3000`, crash policy upside-down > 1000 / airborne > 5000 ticks |
-| network | 47 → 24 tanh → 24 tanh → 3 (1,827 weights), lookahead 3 gates |
+| network | road-v2: 64 → 24 tanh → 24 tanh → 3 (2,235 weights), 6 road lookahead points ([ROAD_AWARE_OBSERVATIONS.md](ROAD_AWARE_OBSERVATIONS.md)); gates-v1 (older runs, wall-ride tracks): 47 inputs, 1,827 weights |
+| progress | road-v2: distance along the road while on it; gates-v1: straight line to the next gate |
 | `track` | `summer1` |
 
 ## One generation

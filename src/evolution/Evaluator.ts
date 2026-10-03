@@ -9,14 +9,17 @@ import { NeuralNetwork } from "../ai/NeuralNetwork.js";
 import type { NetworkArchitecture } from "../ai/types.js";
 import { distance } from "../environment/math.js";
 import type { TrackModel } from "../environment/track.js";
+import type { RoadGeometry } from "../environment/RoadGeometry.js";
+import { RoadObservationEncoder } from "../environment/RoadObservation.js";
 import { TrackObservationEncoder } from "../environment/TrackObservation.js";
-import type { ControlInput, VehicleState } from "../environment/types.js";
+import type { ControlInput, ObservationEncoder, VehicleState } from "../environment/types.js";
 import type { CapturedGameData, CapturedInit, CapturedTrack } from "../polytrack/local/capture.js";
 import { LocalPolyTrack } from "../polytrack/LocalPolyTrack.js";
 import { toVehicleState } from "../polytrack/PolyTrackBackend.js";
+import { PolyTrackRoad } from "../polytrack/track/PolyTrackRoad.js";
 import { PolyTrackTrack } from "../polytrack/track/PolyTrackTrack.js";
-import type { EvolutionConfig } from "./EvolutionConfig.js";
-import { computeFitness, ProgressTracker } from "./Fitness.js";
+import { observationVersion, progressMetric, type EvolutionConfig } from "./EvolutionConfig.js";
+import { computeFitness, ProgressTracker, RoadProgressTracker, type ProgressMeter } from "./Fitness.js";
 import type { EpisodeStats, TerminationReason } from "./Individual.js";
 
 export interface EvaluatorDependencies {
@@ -55,7 +58,9 @@ export interface EvaluatorOptions {
 export class EpisodeEvaluator {
   readonly trackModel: TrackModel;
   readonly architecture: NetworkArchitecture;
-  private readonly encoder: TrackObservationEncoder;
+  /** The road (built from the track's collision meshes) when the observation or progress metric needs it. */
+  readonly road: RoadGeometry | null;
+  private readonly encoder: ObservationEncoder;
   private shared: LocalPolyTrack | null = null;
 
   constructor(
@@ -64,7 +69,11 @@ export class EpisodeEvaluator {
     private readonly options: EvaluatorOptions = {},
   ) {
     this.trackModel = new PolyTrackTrack(deps.track, deps.gameData).toTrackModel();
-    this.encoder = new TrackObservationEncoder(this.trackModel, { lookaheadGates: config.network.lookaheadGates });
+    const roadObservation = observationVersion(config) === "road-v2";
+    this.road = roadObservation || progressMetric(config) === "road-v2" ? PolyTrackRoad.cached(deps.track, deps.gameData, deps.init, this.trackModel) : null;
+    this.encoder = roadObservation
+      ? new RoadObservationEncoder(this.road!, this.trackModel, { lookahead: config.network.roadLookahead! })
+      : new TrackObservationEncoder(this.trackModel, { lookaheadGates: config.network.lookaheadGates });
     this.architecture = drivingArchitecture(this.encoder.size, config.network.hiddenLayers);
   }
 
@@ -89,7 +98,10 @@ export class EpisodeEvaluator {
     const polytrack = await this.simulation();
     try {
       const spawn = await polytrack.reset();
-      const tracker = new ProgressTracker(model, episode.stallEpsilon);
+      const tracker: ProgressMeter =
+        this.road !== null && progressMetric(this.config) === "road-v2"
+          ? new RoadProgressTracker(this.road, model.checkpointCount, episode.stallEpsilon)
+          : new ProgressTracker(model, episode.stallEpsilon);
       tracker.update(0, 0, false, spawn.position);
       let controls = "";
       let ticks = 0;
@@ -128,6 +140,7 @@ export class EpisodeEvaluator {
         distanceDriven,
         maxSpeedKmh,
         decisions: controls.length,
+        ...(tracker instanceof RoadProgressTracker ? { roadDistance: tracker.roadDistance } : {}),
       };
       return { stats, fitness: computeFitness(stats, this.config.fitness, episode), controls };
     } finally {

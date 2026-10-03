@@ -8,6 +8,7 @@
  * outcome is identical for any number of workers. Only the scheduling differs.
  */
 import { Worker } from "node:worker_threads";
+import type { RoadGeometry } from "../environment/RoadGeometry.js";
 import { EpisodeEvaluator, type EvaluationResult, type EvaluatorDependencies } from "./Evaluator.js";
 import type { EvolutionConfig } from "./EvolutionConfig.js";
 
@@ -29,6 +30,8 @@ export type WorkerResponse =
 export interface WorkerInit {
   readonly config: EvolutionConfig;
   readonly deps: EvaluatorDependencies;
+  /** The road, already built by the main thread (plain data; rebuilt into a RoadGeometry in the worker). */
+  readonly road: Pick<RoadGeometry, "samples" | "sections" | "spacing" | "up" | "options"> | null;
 }
 
 /**
@@ -75,9 +78,9 @@ export class WorkerPoolEvaluator implements PopulationEvaluator {
     return this.pool.length;
   }
 
-  static async create(config: EvolutionConfig, deps: EvaluatorDependencies, workers: number): Promise<WorkerPoolEvaluator> {
+  static async create(config: EvolutionConfig, deps: EvaluatorDependencies, workers: number, road: RoadGeometry | null = null): Promise<WorkerPoolEvaluator> {
     if (!Number.isInteger(workers) || workers < 1) throw new Error(`workers must be an integer ≥ 1, got ${workers}`);
-    const init: WorkerInit = { config, deps };
+    const init: WorkerInit = { config, deps, road: road === null ? null : { samples: road.samples, sections: road.sections, spacing: road.spacing, up: road.up, options: road.options } };
     const pool = await Promise.all(
       Array.from({ length: workers }, () => {
         const worker = new Worker(WORKER_URL, { workerData: init });
@@ -154,6 +157,6 @@ export class WorkerPoolEvaluator implements PopulationEvaluator {
 }
 
 /** `workers` = 0: evaluate in this thread; ≥ 1: a worker-thread pool of that size. */
-export async function createPopulationEvaluator(config: EvolutionConfig, deps: EvaluatorDependencies, workers: number): Promise<PopulationEvaluator> {
-  return workers === 0 ? new InProcessEvaluator(config, deps) : WorkerPoolEvaluator.create(config, deps, workers);
+export async function createPopulationEvaluator(config: EvolutionConfig, deps: EvaluatorDependencies, workers: number, road: RoadGeometry | null = null): Promise<PopulationEvaluator> {
+  return workers === 0 ? new InProcessEvaluator(config, deps) : WorkerPoolEvaluator.create(config, deps, workers, road);
 }

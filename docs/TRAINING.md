@@ -90,10 +90,17 @@ Unknown options and unknown config keys are errors, so typos cannot be silently 
 | `checkpointInterval` | `1` | Checkpoint every N generations (the session's last generation always) |
 | `saveEveryGeneration` | `true` | Save every generation's best replay and genome |
 | `replayInterval` | `1` | When `saveEveryGeneration` is false: save every N generations (new all-time bests always) |
-| `observation.lookaheadGates` | `3` | Upcoming gates in each observation (47 inputs) |
+| `observation.version` | `"road-v2"` | `"road-v2"`: road-relative observations, 64 inputs ([ROAD_AWARE_OBSERVATIONS.md](ROAD_AWARE_OBSERVATIONS.md)); `"gates-v1"`: the original gate-based ones, 47 inputs |
+| `observation.roadLookahead` | `[10, 25, 50, 80, 120, 170]` | road-v2: metres ahead along the road that are described |
+| `observation.lookaheadGates` | `3` | gates-v1: upcoming gates in each observation |
 | `network.hiddenLayers` | `[24, 24]` | Hidden layer sizes |
 | `network.controlMapping` | steering 0.25, press 0.5 | Output thresholds for the digital keys |
+| `fitness.progressMetric` | `"road-v2"` | `"road-v2"`: distance along the road while on it; `"gates-v1"`: straight-line distance to the next gate |
 | `fitness` | progress 1000, completion 1000, crash penalty 50 | See [FITNESS_FUNCTION.md](FITNESS_FUNCTION.md) |
+
+road-v2 is available on tracks whose road can be built from the collision meshes (Summer 1 and
+Winter 1 among the official tracks). On others, training stops with an explanation; use
+`--config configs/gates-v1.json` there (also for a curriculum over the official tracks).
 
 The resolved configuration is saved with the run (`config.json`) and inside every checkpoint.
 

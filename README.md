@@ -75,6 +75,7 @@ npm run train                                                         # evolve d
 npm run train -- --generations 100 --population 100 --seed 12345 --workers 4
 npm run train:watch                                                   # train and watch each generation in the viewer
 npm run benchmark:training                                            # evaluation speed for 1, 2, 4, 8 workers
+npm run analyze:turn -- --run <run> --generation <n>                  # what the car saw and did around a checkpoint
 npm run train -- --curriculum --generations 50                        # beat each track's target time, then move on
 npm run viewer                                                        # watch each generation's best driver (http://127.0.0.1:8737)
 npm run watch:evolution                                               # auto-play generation 0, 1, 2, … in the viewer
@@ -86,7 +87,8 @@ The capture step needs Microsoft Edge (or Chrome with `--channel chrome`). See
 [docs/TRACK_OBSERVATIONS.md](docs/TRACK_OBSERVATIONS.md) for track geometry and AI observations, and
 [docs/DRIVING_AGENT.md](docs/DRIVING_AGENT.md) for the neural-network driver, and
 [docs/TRAINING.md](docs/TRAINING.md) for running training (config, workers, resume, output),
-[docs/TRAINING_RESULTS.md](docs/TRAINING_RESULTS.md) for the measured baseline experiments,
+[docs/TRAINING_RESULTS.md](docs/TRAINING_RESULTS.md) for the measured experiments,
+[docs/ROAD_AWARE_OBSERVATIONS.md](docs/ROAD_AWARE_OBSERVATIONS.md) for the road geometry, road progress and road-relative observations,
 [docs/EVOLUTION.md](docs/EVOLUTION.md) / [docs/FITNESS_FUNCTION.md](docs/FITNESS_FUNCTION.md) for the algorithm, and
 [docs/VIEWER.md](docs/VIEWER.md) for the replay viewer and live training dashboard.
 
@@ -96,7 +98,7 @@ The capture step needs Microsoft Edge (or Chrome with `--channel chrome`). See
 - [x] Local, deterministic PolyTrack 0.6.3 physics in Node
 - [x] PolyTrackInterface / PolyTrackBackend on the real physics
 - [x] Track-relative observations from real track data (gate-based)
-- [ ] Road geometry observations (collision-mesh raycasts)
+- [x] Road geometry from the collision meshes: road progress and road-relative observations (road-driven tracks; wall rides not yet)
 - [ ] Toy simulator backend (fast, no game needed) to develop the AI against
 - [x] Feed-forward network + agent
 - [x] Genetic algorithm (deterministic, resumable, with replays)

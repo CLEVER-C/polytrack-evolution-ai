@@ -10,7 +10,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { availableParallelism } from "node:os";
 import { join } from "node:path";
-import { createEvolutionConfig, eliteCount, type EvolutionConfig, type SelectionSettings } from "../evolution/EvolutionConfig.js";
+import { createEvolutionConfig, eliteCount, type EvolutionConfig, type ObservationVersion, type ProgressMetric, type SelectionSettings } from "../evolution/EvolutionConfig.js";
 import { PROJECT_ROOT, TRACKS_CAPTURE_DIR } from "../polytrack/local/paths.js";
 
 export const DEFAULT_TRAINING_CONFIG_PATH = join(PROJECT_ROOT, "configs", "training.default.json");
@@ -38,9 +38,11 @@ export interface TrainingConfig {
   /** When saveEveryGeneration is false: save the best replay/genome every N generations (new all-time bests always). */
   readonly replayInterval: number;
   readonly saveEveryGeneration: boolean;
-  readonly observation: { readonly lookaheadGates: number };
+  /** version: "road-v2" (road-relative, docs/ROAD_AWARE_OBSERVATIONS.md) or "gates-v1"; roadLookahead in metres; lookaheadGates for gates-v1. */
+  readonly observation: { readonly version: ObservationVersion; readonly roadLookahead: readonly number[]; readonly lookaheadGates: number };
   readonly network: { readonly hiddenLayers: readonly number[]; readonly controlMapping: EvolutionConfig["network"]["controlMapping"] };
-  readonly fitness: EvolutionConfig["fitness"];
+  /** progressMetric: "road-v2" (distance along the road) or "gates-v1" (straight-line distance to the next gate). */
+  readonly fitness: EvolutionConfig["fitness"] & { readonly progressMetric: ProgressMetric };
 }
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
@@ -125,7 +127,13 @@ export function toEvolutionConfig(c: TrainingConfig, trackId: string): Evolution
     mutation: { ...c.mutation },
     fitness: { ...c.fitness },
     episode: { ...c.episode, crashPolicy: { ...c.episode.crashPolicy } },
-    network: { hiddenLayers: [...c.network.hiddenLayers], lookaheadGates: c.observation.lookaheadGates, controlMapping: { ...c.network.controlMapping } },
+    network: {
+      observation: c.observation.version,
+      roadLookahead: [...c.observation.roadLookahead],
+      hiddenLayers: [...c.network.hiddenLayers],
+      lookaheadGates: c.observation.lookaheadGates,
+      controlMapping: { ...c.network.controlMapping },
+    },
   });
   if (eliteCount(config) !== c.elitismCount) throw new Error(`elitismCount ${c.elitismCount} cannot be represented for population ${c.populationSize}`);
   return config;

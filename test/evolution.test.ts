@@ -15,10 +15,14 @@ import { trackProgress } from "../src/evolution/Fitness.js";
 import { loadReplay, verifyReplay } from "../src/evolution/Replay.js";
 import { getGameData, getInit, getTrack, SKIP_WITHOUT_GAME } from "./helpers.js";
 
+// Summer 6 has wall-ride parts, which the road builder does not model (road-v2 is unavailable there),
+// so these GA-mechanics tests use the explicit gates-v1 observation and progress metric.
 const CONFIG: EvolutionConfig = createEvolutionConfig({
   seed: 42,
   populationSize: 10,
   track: "summer6",
+  network: { observation: "gates-v1" },
+  fitness: { progressMetric: "gates-v1" },
   eliteFraction: 0.1,
   selection: { type: "elitist", parentFraction: 0.3 },
   episode: { maxTicks: 4_000, stallTicks: 1_500 },

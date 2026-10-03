@@ -5,6 +5,13 @@ Implemented in [`src/evolution/Fitness.ts`](../src/evolution/Fitness.ts) and app
 0.6.3 physics. Every input is measured from the simulation or the game's own track data, and the
 function is pure, so the same episode always gives the same fitness.
 
+> **Two progress metrics.** `fitness.progressMetric: "road-v2"` (the default since step 9) measures the
+> fraction between gates **along the road**, and only while the car is on it. It is described in
+> [ROAD_AWARE_OBSERVATIONS.md](ROAD_AWARE_OBSERVATIONS.md#2-road-progress-roadprogresstracker-fitnessprogressmetric-road-v2).
+> This page describes the formula and `"gates-v1"`, the straight-line metric used by runs made before
+> step 9 (and by configs without a `progressMetric`). The formula below is the same for both; only
+> `f(t)` differs.
+
 ## Formula
 
 ```
@@ -73,6 +80,12 @@ fraction from how close the car has got to the next one.
 | Using the reset key to teleport forward | not available to the agent |
 
 ## Known limitations / possible exploits
+
+**Confirmed in the 100-generation baseline (gates-v1):** after passing checkpoint 2 on Summer 1 the
+best driver braked, stopped and **reversed**; reversing brought it slightly closer to checkpoint 3
+in a straight line and earned +111 fitness. road-v2 removes this: progress only counts along the
+road while on it (see ROAD_AWARE_OBSERVATIONS.md).
+
 
 - **`f` is a straight-line proxy.** PolyTrack has no road centerline (TRACK_OBSERVATIONS.md §2).
   Route segments are a median 281 m long and roads wind between gates, so the fraction can reward
