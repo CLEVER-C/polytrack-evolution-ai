@@ -23,7 +23,8 @@
     "train:watch": "npm run build && node dist/scripts/train.js --watch-each-generation",
     "benchmark:training": "npm run build && node dist/scripts/benchmark-training.js",
     "analyze:run": "npm run build && node dist/scripts/analyze-run.js",
-    "analyze:turn": "npm run build && node dist/scripts/analyze-turn.js"
+    "analyze:turn": "npm run build && node dist/scripts/analyze-turn.js",
+    "analyze:progression": "npm run build && node dist/scripts/analyze-progression.js"
   },
   "engines": {
     "node": ">=20"

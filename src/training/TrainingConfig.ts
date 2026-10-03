@@ -160,7 +160,14 @@ export interface TrainArgs {
 const VALUE_FLAGS = new Set(["config", "run", "track", "seed", "population", "generations", "workers", "checkpoint-interval", "replay-interval", "max-ticks", "mutation-rate", "mutation-strength", "tracks"]);
 const BOOLEAN_FLAGS = new Set(["curriculum", "dashboard", "watch-each-generation"]);
 
-export function parseTrainArgs(argv: readonly string[]): TrainArgs {
+/**
+ * `npm.cmd run train -- --track "Summer 1"` from PowerShell delivers `^Summer^ 1^`: npm's Windows
+ * shim escapes the argument for cmd.exe with carets. No training argument contains "^", so they are removed.
+ */
+const unescapeCmd = (value: string): string => value.replace(/\^/g, "");
+
+export function parseTrainArgs(rawArgv: readonly string[]): TrainArgs {
+  const argv = rawArgv.map(unescapeCmd);
   const values = new Map<string, string>();
   const flags = new Set<string>();
   let resume: string | true | null = null;
