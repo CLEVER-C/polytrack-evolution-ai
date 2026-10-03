@@ -39,7 +39,10 @@ Dependencies only point **up the stack toward `environment`**. Nothing outside `
 | `src/ai` | Networks and agents that map observations to controls. | `NeuralNetwork`, `NetworkTopology`, `Agent`, `ActionDecoder` |
 | `src/evolution` | Population management and pluggable GA operators. Works on flat `Float64Array` genomes, so it doesn't know how networks are structured. | `Genome`, `EvaluatedGenome`, `FitnessFunction`, `SelectionStrategy`, `CrossoverOperator`, `MutationOperator`, `Population` |
 | `src/visualization` | Optional observers for training progress (console, files, dashboards). | `TrainingObserver` |
-| `scripts/` | Future entry points (e.g. `train`, `replay`). Empty for now. | |
+| `src/training` | Training configuration, CLI parsing, run output files (config.json, generations.csv). | `TrainingConfig` |
+| `src/viewer` | Replay player, run catalog and the local viewer server. | `ReplayPlayer`, `ViewerServer` |
+| `scripts/` | Entry points: `train`, `viewer`, `benchmark-training`, setup and examples. | |
+| `configs/` | `training.default.json`: every training setting. | |
 | `data/` | Run output: saved genomes, logs, traces. Git-ignored. | |
 
 ### Data flow (planned)
@@ -68,7 +71,10 @@ npm run verify:simulation   # check stepping, inputs, reset, state and determini
 npm test                    # contract + track-observation tests on real track data
 npm run observe:example     # print a real track-relative observation
 npm run agent:example       # run an untrained neural-network driver on the real physics
-npm run train -- --generations 10 --population 100 --track summer1   # evolve drivers (resumable: --resume)
+npm run train                                                         # evolve drivers: configs/training.default.json (resumable: --resume)
+npm run train -- --generations 100 --population 100 --seed 12345 --workers 4
+npm run train:watch                                                   # train and watch each generation in the viewer
+npm run benchmark:training                                            # evaluation speed for 1, 2, 4, 8 workers
 npm run train -- --curriculum --generations 50                        # beat each track's target time, then move on
 npm run viewer                                                        # watch each generation's best driver (http://127.0.0.1:8737)
 npm run watch:evolution                                               # auto-play generation 0, 1, 2, … in the viewer
@@ -79,7 +85,9 @@ The capture step needs Microsoft Edge (or Chrome with `--channel chrome`). See
 [docs/POLYTRACK_PROTOCOL.md](docs/POLYTRACK_PROTOCOL.md) for the game's simulation protocol, and
 [docs/TRACK_OBSERVATIONS.md](docs/TRACK_OBSERVATIONS.md) for track geometry and AI observations, and
 [docs/DRIVING_AGENT.md](docs/DRIVING_AGENT.md) for the neural-network driver, and
-[docs/EVOLUTION.md](docs/EVOLUTION.md) / [docs/FITNESS_FUNCTION.md](docs/FITNESS_FUNCTION.md) for training, and
+[docs/TRAINING.md](docs/TRAINING.md) for running training (config, workers, resume, output),
+[docs/TRAINING_RESULTS.md](docs/TRAINING_RESULTS.md) for the measured baseline experiments,
+[docs/EVOLUTION.md](docs/EVOLUTION.md) / [docs/FITNESS_FUNCTION.md](docs/FITNESS_FUNCTION.md) for the algorithm, and
 [docs/VIEWER.md](docs/VIEWER.md) for the replay viewer and live training dashboard.
 
 ## Roadmap

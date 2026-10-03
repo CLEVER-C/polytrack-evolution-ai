@@ -1,0 +1,27 @@
+{
+  "run": null,
+  "track": "Summer 1",
+  "seed": 12345,
+  "populationSize": 100,
+  "generations": 100,
+  "episode": {
+    "maxTicks": 60000,
+    "ticksPerStep": 10,
+    "stallTicks": 3000,
+    "stallEpsilon": 0.001,
+    "crashPolicy": { "maxUpsideDownFrames": 1000, "maxAirborneFrames": 5000 }
+  },
+  "mutation": { "rate": 0.1, "strength": 0.2 },
+  "elitismCount": 5,
+  "selection": { "type": "elitist", "parentFraction": 0.2, "tournamentSize": 3 },
+  "workers": "auto",
+  "checkpointInterval": 1,
+  "replayInterval": 1,
+  "saveEveryGeneration": true,
+  "observation": { "lookaheadGates": 3 },
+  "network": {
+    "hiddenLayers": [24, 24],
+    "controlMapping": { "steeringThreshold": 0.25, "pressThreshold": 0.5 }
+  },
+  "fitness": { "progressWeight": 1000, "completionTimeWeight": 1000, "crashPenalty": 50 }
+}

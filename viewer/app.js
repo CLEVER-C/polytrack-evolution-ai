@@ -23,6 +23,10 @@ const state = {
 // ---------- formatting ----------
 const fmtFitness = (v) => (v == null ? "—" : v.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 }));
 const fmtTime = (ticks) => (ticks == null ? "—" : `${(ticks / 1000).toFixed(3)}s`);
+const fmtDuration = (ms) => {
+  const t = Math.round(ms / 1000), h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), sec = t % 60;
+  return h > 0 ? `${h}h ${m}m ${sec}s` : m > 0 ? `${m}m ${sec}s` : `${sec}s`;
+};
 const escape = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
 // ---------- server calls ----------
@@ -187,7 +191,12 @@ function setWatch(on) {
   if (!on) return;
   const first = state.generations.find((g) => g.hasReplay);
   if (first === undefined) {
-    $("watch-status").textContent = "No generations with replays yet.";
+    // Training may not have finished its first generation yet: keep checking.
+    $("watch-status").textContent = "Waiting for the first generation…";
+    state.watchTimer = setTimeout(async () => {
+      await refreshGenerations().catch(showError);
+      if (state.watch) setWatch(true);
+    }, 3000);
     return;
   }
   void loadGeneration(first.generation, { play: true });
@@ -243,6 +252,9 @@ async function refreshStatus() {
   $("live-best-time").textContent = fmtTime(status.bestTime);
   $("live-mutation").textContent = `${status.mutationRate} (σ ${status.mutationStrength})`;
   $("live-speed").textContent = `${status.ticksPerSecond.toLocaleString("en-US")} ticks/s`;
+  $("live-agents").textContent = status.agentsPerSecond == null ? "—" : String(status.agentsPerSecond);
+  $("live-workers").textContent = status.workers == null ? "—" : status.workers === 0 ? "main thread" : String(status.workers);
+  $("live-elapsed").textContent = status.elapsedMs == null ? "—" : fmtDuration(status.elapsedMs);
   $("live-note").textContent = `Updated ${ageS < 2 ? "just now" : `${Math.round(ageS)} s ago`}${stale ? " — training may have stopped" : ""}.`;
   // New generations appear in the list as soon as training finishes them.
   if (status.lastGeneration && status.lastGeneration.generation >= state.generations.length) void refreshGenerations().catch(showError);

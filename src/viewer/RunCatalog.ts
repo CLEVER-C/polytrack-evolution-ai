@@ -1,6 +1,6 @@
 /**
  * Read-only view of saved training output (data/runs/). A "run" is any
- * directory holding a history.json written by EvolutionEngine: a single-track
+ * directory holding a generations.json (older runs: history.json) written by EvolutionEngine: a single-track
  * run (`summer1-seed1`) or one track of a curriculum (`curriculum-seed1/00-summer1`).
  *
  * Every generation's best replay is located through that generation's own
@@ -10,10 +10,16 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
-import type { GenerationResult } from "../evolution/EvolutionEngine.js";
+import { GENERATIONS_FILE, type GenerationResult } from "../evolution/EvolutionEngine.js";
 import { loadReplay, type Replay } from "../evolution/Replay.js";
 import { PROJECT_ROOT } from "../polytrack/local/paths.js";
 import { readTrainingStatus, type TrainingStatus } from "../visualization/TrainingStatus.js";
+
+/** generations.json, or history.json in runs made before it was renamed; null when neither exists. */
+function historyPath(dir: string): string | null {
+  for (const name of [GENERATIONS_FILE, "history.json"]) if (existsSync(join(dir, name))) return join(dir, name);
+  return null;
+}
 
 export const RUNS_DIR = join(PROJECT_ROOT, "data", "runs");
 
@@ -66,14 +72,15 @@ export class RunCatalog {
     if (!existsSync(this.root)) return [];
     const found: RunSummary[] = [];
     const visit = async (dir: string, depth: number): Promise<void> => {
-      if (existsSync(join(dir, "history.json"))) {
+      const historyFile = historyPath(dir);
+      if (historyFile !== null) {
         const history = await this.readHistoryAt(dir);
         found.push({
           id: relative(this.root, dir).split(sep).join("/"),
           track: await this.trackOf(dir),
           generations: history.length,
           bestFitness: history.length === 0 ? null : Math.max(...history.map((h) => h.bestFitness)),
-          updatedAt: (await stat(join(dir, "history.json"))).mtime.toISOString(),
+          updatedAt: (await stat(historyFile)).mtime.toISOString(),
         });
         return;
       }
@@ -90,7 +97,7 @@ export class RunCatalog {
   runDir(id: string): string {
     const dir = resolve(this.root, id);
     if (dir !== this.root && !dir.startsWith(this.root + sep)) throw new Error(`Invalid run "${id}"`);
-    if (!existsSync(join(dir, "history.json"))) throw new Error(`Run "${id}" has no history.json`);
+    if (historyPath(dir) === null) throw new Error(`Run "${id}" has no generations.json`);
     return dir;
   }
 
@@ -130,9 +137,10 @@ export class RunCatalog {
 
   private async readHistoryAt(dir: string): Promise<GenerationResult[]> {
     try {
-      return JSON.parse(await readFile(join(dir, "history.json"), "utf8")) as GenerationResult[];
+      const path = historyPath(dir);
+      return path === null ? [] : (JSON.parse(await readFile(path, "utf8")) as GenerationResult[]);
     } catch (err) {
-      // history.json is rewritten after every generation; a read can catch it half-written.
+      // The history is rewritten after every generation; a read can catch it half-written.
       if (err instanceof SyntaxError) return [];
       throw err;
     }
@@ -142,10 +150,11 @@ export class RunCatalog {
   private async trackOf(dir: string): Promise<string | null> {
     const status = await readTrainingStatus(dir);
     if (status !== null) return status.track;
-    const best = join(dir, "replays", "best.json");
-    if (existsSync(best)) {
+    const best = [join(dir, "best-ever.json"), join(dir, "replays", "best.json")].find((f) => existsSync(f));
+    if (best !== undefined) {
       try {
-        return (await loadReplay(best)).trackId;
+        const data = JSON.parse(await readFile(best, "utf8")) as { trackId?: string; track?: string };
+        return data.trackId ?? data.track ?? null;
       } catch {
         return null;
       }

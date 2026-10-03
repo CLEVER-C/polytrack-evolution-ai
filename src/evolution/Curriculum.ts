@@ -13,11 +13,13 @@ import { join } from "node:path";
 import type { EvolutionConfig } from "./EvolutionConfig.js";
 import { validateEvolutionConfig } from "./EvolutionConfig.js";
 import type { EvaluatorDependencies } from "./Evaluator.js";
-import { EvolutionEngine, type GenerationResult } from "./EvolutionEngine.js";
+import { EvolutionEngine, type EngineOptions, type GenerationResult } from "./EvolutionEngine.js";
 
 export interface CurriculumOptions {
   /** Loads a track's game data; defaults to reading the captured data in vendor/. */
   readonly loadDependencies?: (track: string) => Promise<EvaluatorDependencies>;
+  /** Engine settings that do not affect results (evaluation workers, which generations save files). */
+  readonly engine?: Pick<EngineOptions, "workers" | "saveGeneration">;
 }
 
 /** The game's official tracks, in the order the game lists them. */
@@ -105,7 +107,7 @@ export class Curriculum {
     const c = new Curriculum(state, null, outputDir, options);
     if (!c.isComplete) {
       const dir = c.trackDir(state.currentIndex);
-      c.engine = await EvolutionEngine.loadCheckpoint(join(dir, "checkpoint.json"), { outputDir: dir, ...(await c.dependencies(c.currentTrack!)) });
+      c.engine = await EvolutionEngine.loadCheckpoint(join(dir, "checkpoint.json"), { ...options.engine, outputDir: dir, ...(await c.dependencies(c.currentTrack!)) });
     }
     return c;
   }
@@ -132,6 +134,11 @@ export class Curriculum {
     return this.engine;
   }
 
+  /** Stops the current engine's evaluation workers. */
+  async dispose(): Promise<void> {
+    await this.engine?.dispose();
+  }
+
   /** Runs one generation on the current track; advances if its best beat the target. Saves afterwards. */
   async runGeneration(): Promise<CurriculumStep> {
     const engine = this.getEngine();
@@ -156,7 +163,9 @@ export class Curriculum {
    * target is beaten; can also be called to skip a track.
    */
   async advance(): Promise<void> {
-    const carried = this.getEngine().getPopulation()!.individuals.map((i) => i.weights);
+    const previous = this.getEngine();
+    const carried = previous.getPopulation()!.individuals.map((i) => i.weights);
+    await previous.dispose();
     const next = this.state.currentIndex + 1;
     this.state = { ...this.state, currentIndex: next };
     if (next >= this.state.tracks.length) {
@@ -182,7 +191,7 @@ export class Curriculum {
 
   private async createEngine(index: number): Promise<EvolutionEngine> {
     const config = this.configFor(index);
-    return EvolutionEngine.create(config, { outputDir: this.trackDir(index), ...(await this.dependencies(config.track)) });
+    return EvolutionEngine.create(config, { ...this.options.engine, outputDir: this.trackDir(index), ...(await this.dependencies(config.track)) });
   }
 
   private async save(): Promise<void> {
