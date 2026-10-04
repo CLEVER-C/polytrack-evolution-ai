@@ -56,12 +56,11 @@ function state(position: Vec3, opts: { heading?: number; velocity?: Vec3; checkp
 describe("road progress (road-v2)", () => {
   test("forward movement along the road increases progress; standing still does not", () => {
     const { road } = lRoad();
-    const t = new RoadProgressTracker(road, 1, 0.001);
+    const t = new RoadProgressTracker(road, 1);
     t.update(0, 0, false, vec(0, 0, 0));
     assert.equal(t.best, 0);
     for (let tick = 10; tick <= 300; tick += 10) t.update(tick, 0, false, vec(0, 0, 0));
     assert.equal(t.best, 0, "stationary car gains nothing");
-    assert.equal(t.ticksSinceImprovement(300), 300);
     let z = 0;
     let last = 0;
     for (let tick = 310; tick <= 1000; tick += 10) {
@@ -76,7 +75,7 @@ describe("road progress (road-v2)", () => {
 
   test("driving backwards never increases progress", () => {
     const { road } = lRoad();
-    const t = new RoadProgressTracker(road, 1, 0.001);
+    const t = new RoadProgressTracker(road, 1);
     for (let z = 0; z <= 50; z++) t.update(z * 10, 0, false, vec(0, 0, z));
     const peak = t.best;
     for (let z = 50; z >= 0; z--) t.update(1000 + (50 - z) * 10, 0, false, vec(0, 0, z));
@@ -85,9 +84,9 @@ describe("road progress (road-v2)", () => {
 
   test("Euclidean closeness alone earns nothing: cutting the corner off-road towards the finish gate", () => {
     const { road } = lRoad();
-    const roadT = new RoadProgressTracker(road, 1, 0.001);
+    const roadT = new RoadProgressTracker(road, 1);
     const { track } = lRoad();
-    const oldT = new ProgressTracker(track, 0.001);
+    const oldT = new ProgressTracker(track);
     // Drive 30 m up the road, then leave it diagonally towards the corner region (off-road, x > 5).
     for (let z = 0; z <= 30; z++) {
       roadT.update(z * 10, 0, false, vec(0, 0, z));
@@ -105,7 +104,7 @@ describe("road progress (road-v2)", () => {
 
   test("a crashed car pushed against the edge or sliding off the road gains nothing", () => {
     const { road } = lRoad();
-    const t = new RoadProgressTracker(road, 1, 0.001);
+    const t = new RoadProgressTracker(road, 1);
     for (let z = 0; z <= 40; z++) t.update(z * 10, 0, false, vec(0, 0, z));
     const best = t.best;
     // Off the road beside the same spot, moving slowly forward 20 m: not counted.
@@ -115,14 +114,14 @@ describe("road progress (road-v2)", () => {
 
   test("checkpoint transitions: progress follows the section of the next checkpoint, in track order", () => {
     const { road } = lRoad();
-    const t = new RoadProgressTracker(road, 1, 0.001);
+    const t = new RoadProgressTracker(road, 1);
     for (let z = 0; z <= 99; z++) t.update(z * 10, 0, false, vec(0, 0, z));
     assert.ok(t.best < 1, "capped below the gate until the physics registers it");
     // Physics registers checkpoint 0; the car continues around the corner.
     for (let x = 0; x >= -50; x--) t.update(1000 + -x * 10, 1, false, vec(x, 0, 100));
     assert.ok(t.best > 1.45 && t.best < 1.55, `half of section 1 ≈ 1.5, got ${t.best}`);
     // While checkpoint 0 is not registered, being on section 1's road does not count.
-    const u = new RoadProgressTracker(road, 1, 0.001);
+    const u = new RoadProgressTracker(road, 1);
     for (let z = 0; z <= 20; z++) u.update(z * 10, 0, false, vec(0, 0, z));
     const before = u.best;
     u.update(300, 0, false, vec(-60, 0, 100));
@@ -135,7 +134,7 @@ describe("road progress (road-v2)", () => {
     const samples = buildRoadSamples(points, points.map(() => Y_UP), points.map(() => ({ left: 5, right: 5, bridged: false })), 1, Y_UP);
     const end = samples[samples.length - 1]!.s;
     const road = new RoadGeometry(samples, [{ index: 0, startS: 0, endS: end }], 1, Y_UP);
-    const t = new RoadProgressTracker(road, 0, 0.001);
+    const t = new RoadProgressTracker(road, 0);
     let tick = 0;
     for (let z = 0; z <= 40; z++) t.update((tick += 10), 0, false, vec(0, 0, z));
     const best = t.best;
@@ -146,7 +145,7 @@ describe("road progress (road-v2)", () => {
 
   test("finishing counts as checkpointCount + 1", () => {
     const { road } = lRoad();
-    const t = new RoadProgressTracker(road, 1, 0.001);
+    const t = new RoadProgressTracker(road, 1);
     t.update(10, 1, true, vec(-100, 0, 100));
     assert.equal(t.best, 2);
   });
@@ -195,9 +194,9 @@ describe("road-relative observations", () => {
 });
 
 describe("config versions", () => {
-  test("new configs use road-v2; configs without version fields mean gates-v1", () => {
+  test("new configs use road-v3 observations and road-v2 progress; configs without version fields mean gates-v1", () => {
     const c = createEvolutionConfig();
-    assert.equal(observationVersion(c), "road-v2");
+    assert.equal(observationVersion(c), "road-v3");
     assert.equal(progressMetric(c), "road-v2");
     const { observation: _o, roadLookahead: _l, ...oldNetwork } = c.network;
     const { progressMetric: _p, ...oldFitness } = c.fitness;
@@ -241,7 +240,7 @@ describe("PolyTrack road from the real Summer 1 collision meshes", { skip: SKIP_
     const [init, gameData, track] = await Promise.all([getInit(), getGameData(), getTrack("summer1")]);
     const model = new PolyTrackTrack(track, gameData).toTrackModel();
     const road = PolyTrackRoad.cached(track, gameData, init, model);
-    const t = new RoadProgressTracker(road, model.checkpointCount, 0.001);
+    const t = new RoadProgressTracker(road, model.checkpointCount);
     const pt = new LocalPolyTrack({ init, gameData });
     await pt.connect(track);
     try {
@@ -262,10 +261,11 @@ describe("PolyTrack road from the real Summer 1 collision meshes", { skip: SKIP_
     }
   });
 
-  test("evaluator: road-v2 by default (64 inputs); a config without versions still evaluates as gates-v1 (47 inputs)", async () => {
+  test("evaluator: road-v3 by default (88 inputs), road-v2 64; a config without versions still evaluates as gates-v1 (47 inputs)", async () => {
     const deps = { init: await getInit(), gameData: await getGameData(), track: await getTrack("summer1") };
     const config = createEvolutionConfig({ track: "summer1", populationSize: 2, episode: { maxTicks: 1000 } });
-    assert.equal(new EpisodeEvaluator(config, deps).architecture.inputSize, 64);
+    assert.equal(new EpisodeEvaluator(config, deps).architecture.inputSize, 88);
+    assert.equal(new EpisodeEvaluator({ ...config, network: { ...config.network, observation: "road-v2" } }, deps).architecture.inputSize, 64);
     const { observation: _o, roadLookahead: _l, ...network } = config.network;
     const { progressMetric: _p, ...fitness } = config.fitness;
     const old = new EpisodeEvaluator({ ...config, network, fitness }, deps);

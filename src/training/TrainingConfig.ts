@@ -38,7 +38,7 @@ export interface TrainingConfig {
   /** When saveEveryGeneration is false: save the best replay/genome every N generations (new all-time bests always). */
   readonly replayInterval: number;
   readonly saveEveryGeneration: boolean;
-  /** version: "road-v2" (road-relative, docs/ROAD_AWARE_OBSERVATIONS.md) or "gates-v1"; roadLookahead in metres; lookaheadGates for gates-v1. */
+  /** version: "road-v3" (road-relative + width / finish features), "road-v2" (road-relative, docs/ROAD_AWARE_OBSERVATIONS.md) or "gates-v1"; roadLookahead in metres; lookaheadGates for gates-v1. */
   readonly observation: { readonly version: ObservationVersion; readonly roadLookahead: readonly number[]; readonly lookaheadGates: number };
   readonly network: { readonly hiddenLayers: readonly number[]; readonly controlMapping: EvolutionConfig["network"]["controlMapping"] };
   /** progressMetric: "road-v2" (distance along the road) or "gates-v1" (straight-line distance to the next gate). */

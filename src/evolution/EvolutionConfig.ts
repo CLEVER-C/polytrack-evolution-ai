@@ -30,8 +30,10 @@ export type SelectionSettings =
  * was made before versions existed and means "gates-v1" (see observationVersion /
  * progressMetric), so old checkpoints and replays keep their original meaning.
  */
-export type ObservationVersion = "gates-v1" | "road-v2";
+export type ObservationVersion = "gates-v1" | "road-v2" | "road-v3";
 export type ProgressMetric = "gates-v1" | "road-v2";
+/** How a stall is detected (Fitness.ts StallDetector). Absent = "per-step-v1". */
+export type StallRule = "per-step-v1" | "window-v2";
 
 export interface FitnessSettings {
   /** How progress between checkpoints is measured. Absent = "gates-v1". */
@@ -49,10 +51,12 @@ export interface EpisodeSettings {
   readonly maxTicks: number;
   /** Physics ticks each network decision is held for. */
   readonly ticksPerStep: number;
-  /** End the episode if track progress has not improved for this many ticks. */
+  /** End the episode if track progress has not improved (by more than stallEpsilon) over this many ticks. */
   readonly stallTicks: number;
   /** Minimum progress gain (in gate units) that counts as improvement for stall detection. */
   readonly stallEpsilon: number;
+  /** "window-v2": gain measured over the last stallTicks. Absent = "per-step-v1" (runs before step 11). */
+  readonly stallRule?: StallRule;
   /** Crash rules evaluated on the physics state history (see PolyTrackCrashPolicy). */
   readonly crashPolicy: PolyTrackCrashPolicy;
 }
@@ -94,9 +98,10 @@ export const DEFAULT_EVOLUTION_CONFIG: EvolutionConfig = {
     ticksPerStep: 10,
     stallTicks: 3_000,
     stallEpsilon: 0.001,
+    stallRule: "window-v2",
     crashPolicy: { maxUpsideDownFrames: 1_000, maxAirborneFrames: 5_000 },
   },
-  network: { observation: "road-v2", roadLookahead: [10, 25, 50, 80, 120, 170], hiddenLayers: [...DEFAULT_HIDDEN_LAYERS], lookaheadGates: 3, controlMapping: DEFAULT_CONTROL_MAPPING },
+  network: { observation: "road-v3", roadLookahead: [10, 25, 50, 80, 120, 170], hiddenLayers: [...DEFAULT_HIDDEN_LAYERS], lookaheadGates: 3, controlMapping: DEFAULT_CONTROL_MAPPING },
 };
 
 type DeepPartial<T> = { [K in keyof T]?: T[K] extends readonly unknown[] ? T[K] : T[K] extends object ? DeepPartial<T[K]> : T[K] };
@@ -128,6 +133,9 @@ export const observationVersion = (c: Pick<EvolutionConfig, "network">): Observa
 /** The config's progress metric; configs from before versioning are "gates-v1". */
 export const progressMetric = (c: Pick<EvolutionConfig, "fitness">): ProgressMetric => c.fitness.progressMetric ?? "gates-v1";
 
+/** The episode's stall rule; configs from before stall-rule versions are "per-step-v1". */
+export const stallRule = (e: Pick<EpisodeSettings, "stallRule">): StallRule => e.stallRule ?? "per-step-v1";
+
 export function eliteCount(config: Pick<EvolutionConfig, "eliteFraction" | "populationSize">): number {
   return Math.min(config.populationSize, Math.max(1, Math.round(config.eliteFraction * config.populationSize)));
 }
@@ -147,8 +155,9 @@ export function validateEvolutionConfig(c: EvolutionConfig): void {
   if (!Number.isInteger(e.ticksPerStep) || e.ticksPerStep < 1) fail("episode.ticksPerStep must be an integer ≥ 1");
   if (!Number.isInteger(e.maxTicks) || e.maxTicks < e.ticksPerStep) fail("episode.maxTicks must be an integer ≥ ticksPerStep");
   if (!(e.stallTicks > 0)) fail("episode.stallTicks must be > 0");
+  if (!["per-step-v1", "window-v2"].includes(stallRule(e))) fail('episode.stallRule must be "per-step-v1" or "window-v2"');
   if (c.track.length === 0) fail("track is required");
-  if (!["gates-v1", "road-v2"].includes(observationVersion(c))) fail('network.observation must be "gates-v1" or "road-v2"');
+  if (!["gates-v1", "road-v2", "road-v3"].includes(observationVersion(c))) fail('network.observation must be "gates-v1", "road-v2" or "road-v3"');
   if (!["gates-v1", "road-v2"].includes(progressMetric(c))) fail('fitness.progressMetric must be "gates-v1" or "road-v2"');
-  if (observationVersion(c) === "road-v2" && !(c.network.roadLookahead !== undefined && c.network.roadLookahead.length > 0 && c.network.roadLookahead.every((d) => d > 0))) fail("network.roadLookahead must list positive distances");
+  if (observationVersion(c) !== "gates-v1" && !(c.network.roadLookahead !== undefined && c.network.roadLookahead.length > 0 && c.network.roadLookahead.every((d) => d > 0))) fail("network.roadLookahead must list positive distances");
 }

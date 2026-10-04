@@ -9,6 +9,7 @@
     "ticksPerStep": 10,
     "stallTicks": 3000,
     "stallEpsilon": 0.001,
+    "stallRule": "window-v2",
     "crashPolicy": { "maxUpsideDownFrames": 1000, "maxAirborneFrames": 5000 }
   },
   "mutation": { "rate": 0.1, "strength": 0.2 },
@@ -18,7 +19,7 @@
   "checkpointInterval": 1,
   "replayInterval": 1,
   "saveEveryGeneration": true,
-  "observation": { "version": "road-v2", "roadLookahead": [10, 25, 50, 80, 120, 170], "lookaheadGates": 3 },
+  "observation": { "version": "road-v3", "roadLookahead": [10, 25, 50, 80, 120, 170], "lookaheadGates": 3 },
   "network": {
     "hiddenLayers": [24, 24],
     "controlMapping": { "steeringThreshold": 0.25, "pressThreshold": 0.5 }

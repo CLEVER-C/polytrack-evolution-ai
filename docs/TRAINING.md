@@ -81,7 +81,8 @@ Unknown options and unknown config keys are errors, so typos cannot be silently 
 | `episode.maxTicks` | `60000` | Episode timeout (60 s) |
 | `episode.ticksPerStep` | `10` | A network decision every 10 ms |
 | `episode.stallTicks` | `3000` | End the episode after 3 s without track progress |
-| `episode.stallEpsilon` | `0.001` | Minimum progress gain that counts |
+| `episode.stallEpsilon` | `0.001` | Minimum progress gain over those 3 s that counts |
+| `episode.stallRule` | `"window-v2"` | `"window-v2"`: gain measured over the last `stallTicks`; absent (runs before step 11) = `"per-step-v1"` ([FITNESS_FUNCTION.md](FITNESS_FUNCTION.md)) |
 | `episode.crashPolicy` | upside-down 1 s, airborne 5 s | Crash rules |
 | `mutation.rate` / `.strength` | `0.1` / `0.2` | Per-weight mutation probability / Gaussian σ |
 | `elitismCount` | `5` | Individuals copied unchanged |
@@ -90,8 +91,8 @@ Unknown options and unknown config keys are errors, so typos cannot be silently 
 | `checkpointInterval` | `1` | Checkpoint every N generations (the session's last generation always) |
 | `saveEveryGeneration` | `true` | Save every generation's best replay and genome |
 | `replayInterval` | `1` | When `saveEveryGeneration` is false: save every N generations (new all-time bests always) |
-| `observation.version` | `"road-v2"` | `"road-v2"`: road-relative observations, 64 inputs ([ROAD_AWARE_OBSERVATIONS.md](ROAD_AWARE_OBSERVATIONS.md)); `"gates-v1"`: the original gate-based ones, 47 inputs |
-| `observation.roadLookahead` | `[10, 25, 50, 80, 120, 170]` | road-v2: metres ahead along the road that are described |
+| `observation.version` | `"road-v3"` | `"road-v3"`: road-v2 plus width / edges ahead, width change, distance to finish, time to reach, 88 inputs; `"road-v2"`: road-relative observations, 64 inputs ([ROAD_AWARE_OBSERVATIONS.md](ROAD_AWARE_OBSERVATIONS.md)); `"gates-v1"`: the original gate-based ones, 47 inputs |
+| `observation.roadLookahead` | `[10, 25, 50, 80, 120, 170]` | road-v2 / road-v3: metres ahead along the road that are described |
 | `observation.lookaheadGates` | `3` | gates-v1: upcoming gates in each observation |
 | `network.hiddenLayers` | `[24, 24]` | Hidden layer sizes |
 | `network.controlMapping` | steering 0.25, press 0.5 | Output thresholds for the digital keys |

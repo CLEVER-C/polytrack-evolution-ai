@@ -4,12 +4,16 @@ Step 9 gives the existing evolutionary agent better information and a physically
 progress signal. The network architecture is unchanged; only its input changes (from 47 to 64
 features), so the hidden layers are still 24 → 24.
 
-| | gates-v1 (before) | road-v2 (now, default) |
+| | gates-v1 (before) | road-v2 (step 9) |
 | --- | --- | --- |
 | Where is the road? | not known; only gate boxes | centerline, edges, normal, bank, curvature from the track's collision meshes |
 | Progress between gates | straight-line distance to the next gate | distance **along the road**, only while on the road |
 | Network input | 47: car state, 3 gates (straight-line), gate-to-gate "turns" | 64: car state, progress, the car's position and motion in the road frame, and 6 lookahead points along the road |
 | Config | `network.observation: "gates-v1"`, `fitness.progressMetric: "gates-v1"` (or absent) | `"road-v2"` |
+
+Step 11 adds the **road-v3** observation (now the default; progress stays road-v2): the 64 road-v2
+features plus road width and edge distances at every lookahead point, width change ahead, distance to
+the finish and time to reach, 88 in total (§3, road-v3).
 
 Results of the first experiment: [TRAINING_RESULTS.md](TRAINING_RESULTS.md#step-9-road-v2-20-generation-experiment).
 
@@ -179,6 +183,61 @@ with `tanh(v / scale)` into (−1, 1) unless noted.
 
 `RoadObservationEncoder.featureNames()` lists them in code.
 
+### road-v3: width ahead, finish distance, time to reach (`network.observation: "road-v3"`, default since step 11)
+
+Step 10's best driver reached Summer 1's finish chute at 302 km/h and hit its side: the road
+narrows from 60 m to 14 m between s ≈ 1,294 and 1,330 m, and road-v2 only reports the width **at
+the car**, so the narrowing became visible about 0.1 s before impact. road-v3 keeps the 64 road-v2
+features unchanged, in the same order, and appends 24 (88 in total; the network becomes
+88 → 24 → 24 → 3, 2,811 weights; hidden layers unchanged):
+
+| # | Feature | Meaning | Normalization |
+| --- | --- | --- | --- |
+| 64+3k | ahead{d}.width | road width at the lookahead point | tanh(w / 30 m), as roadWidth |
+| 65+3k | ahead{d}.toEdgeLeft | from the car's current lateral line to the left edge there (negative = that line leaves the road) | tanh(d / 10 m), as distanceToEdgeLeft |
+| 66+3k | ahead{d}.toEdgeRight | same, right edge | tanh(d / 10 m) |
+| 82–84 | widthChange10 / 25 / 50 | width d m ahead relative to the width here | tanh(ln(w_ahead / w_here)): 0 constant, < 0 narrowing, > 0 widening |
+| 85 | distanceToFinish | road distance to the finish line | tanh(d / 200 m) |
+| 86–87 | timeToReach50 / 120 | time to cover 50 / 120 m (capped at the finish) at the current along-road speed | 1 − tanh(t / 2 s); 0 when the along-road speed is ≤ 0.5 m/s (stopped or reversing) |
+
+(k = 0…5 for the lookahead distances 10, 25, 50, 80, 120, 170 m.)
+
+What was left out, and why:
+
+- **futureHalfWidth** is exactly width / 2.
+- **futureLeftEdge / futureRightEdge** measured from the centerline: the centerline is re-centred
+  between the measured edges (§1), so both equal half the width; the edge distances from the car's
+  own line (above) carry the useful part, how much lateral room the car has if it keeps its line.
+- **More time-to-reach distances**: two cover the braking horizon (50 m is 0.6 s at 300 km/h,
+  120 m is 1.4 s); the lookahead distances themselves are already inputs.
+
+**Lookahead past the finish.** The road ends at the finish line (the centerline is built from gate
+to gate). Summer 1's Finish part extends about 10 m beyond the line and nothing follows it, so there
+is no road to describe there. road-v2 zero-filled lookahead points past the end, so the 100–170 m
+points vanished over the last 170 m. In road-v3 such a point keeps `present = 0` (it is beyond the
+track end) but describes the **last real road sample**, the finish line: its heading, position,
+curvature, bank, width and edge distances. Nothing is extrapolated beyond it. The finish line's
+position and the final chute width stay visible right up to the line, and `distanceToFinish` says
+how far it is.
+
+**What it shows on step 10's best driver** (`npm run analyze:finish -- --run road-v2-g100-summer1-seed12345 --generation 99`;
+road-v3 only observes, the controls are the recorded ones):
+
+| t (s) | road s (m) | km/h | width here | width at +10/25/50/80/120/170 m | widthChange 10/25/50 | to finish |
+| --- | --- | --- | --- | --- | --- | --- |
+| 27.75 | 1,142 | 226 | 56 | 56/55/55/56/60/**40** | −0.01/−0.02/−0.02 | 221 m |
+| 28.00 | 1,159 | 234 | 55 | 55/55/56/57/61/**14** | −0.01/−0.01/−0.00 | 204 m |
+| 28.75 | 1,213 | 259 | 56 | 56/57/60/60/**14/14*** | 0.01/0.02/0.08 | 150 m |
+| 29.50 | 1,271 | 286 | 61 | 61/60/**25/14/14*/14*** | 0.00/−0.01/**−0.72** | 92 m |
+| 29.75 | 1,290 | 294 | 60 | 55/**35/14/14*/14*/14*** | −0.08/−0.49/**−0.90** | 73 m |
+| 30.00 | 1,308 | 302 | 45 | **30/14/14/14*/14*/14*** | −0.40/−0.83/−0.83 | 55 m |
+| 30.25 | 1,322 | 44 | 25 | impact | | 41 m |
+
+(* = past the finish: the finish-line sample.) The 14 m chute is in the input from 28.0 s, 2.3 s and
+~160 m before the impact, while the road at the car is still 55 m wide; at 29.75 s the car's line is
+3 m from the right edge 50 m ahead (`toEdgeRight +50`). The car never braked.
+
+
 ### Lookahead distances: 10, 25, 50, 80, 120, 170 m
 
 Chosen from Summer 1's measured geometry and the speeds the cars reach:
@@ -231,6 +290,15 @@ around the checkpoint:
 
 It ends with the old-vs-new comparison.
 
+```bash
+npm run analyze:finish -- --run <run> --generation <n> [--last 5] [--every 100]
+```
+
+Replays a run (any observation version) and prints what road-v3 reports over the last seconds: road
+s, speed, lateral offset, width here and at each lookahead point (`*` = past the finish), edge
+distances from the car's line at +25/50/80 m, width change, distance to the finish, time to reach,
+road heading ahead, and the controls.
+
 ## 5. Compatibility
 
 - Configs, checkpoints and replays carry `network.observation` and `fitness.progressMetric`. Anything
@@ -238,6 +306,8 @@ It ends with the old-vs-new comparison.
   trained with (`observationVersion()` / `progressMetric()`). Resuming an old run continues with gates-v1.
 - Replays play back from their recorded controls, so the viewer shows old and new runs alike.
 - A curriculum transfers weights between tracks; all tracks must use the same observation version.
+- road-v3 is a separate version: road-v2 runs still get exactly the 64 road-v2 features (including the
+  zero-filled lookahead past the finish), so their replays and checkpoints reproduce.
 
 ## 6. Tests (`test/road-geometry.test.ts`)
 
@@ -256,8 +326,18 @@ It ends with the old-vs-new comparison.
   - the road passes every gate in order, inside the road, with plausible width, only the jump bridged, and more than 20° of bank after checkpoint 2;
   - building is deterministic;
   - a straight-driving car's road distance matches its real distance.
-- **Compatibility:** road-v2 is the default (64 inputs); a config without versions evaluates as
-  gates-v1 (47 inputs).
+- **Compatibility:** road-v3 is the default (88 inputs), road-v2 still 64; a config without versions
+  evaluates as gates-v1 (47 inputs).
+- **road-v3** (`test/finish-chute.test.ts`, on a synthetic 300 m road narrowing from 60 m to 14 m):
+  - the first 64 features are road-v2's, in order;
+  - current and future width are deterministic, all features bounded in [−1, 1];
+  - a narrowing road gives decreasing width ahead and negative width change before the car gets
+    there; constant width gives 0; widening gives a positive change;
+  - future edge distances follow the car's lateral offset, go negative when that line leaves the
+    road ahead, and are deterministic;
+  - distance to the finish is exact; lookahead past the finish stays at the finish line
+    (`present = 0`, finish-line width and position, never beyond the road); road-v2 still zero-fills;
+  - time to reach is 0 when stopped or reversing, grows with speed, and is capped at the finish.
 
 ## 7. Known limitations
 

@@ -24,7 +24,9 @@
     "benchmark:training": "npm run build && node dist/scripts/benchmark-training.js",
     "analyze:run": "npm run build && node dist/scripts/analyze-run.js",
     "analyze:turn": "npm run build && node dist/scripts/analyze-turn.js",
-    "analyze:progression": "npm run build && node dist/scripts/analyze-progression.js"
+    "analyze:progression": "npm run build && node dist/scripts/analyze-progression.js",
+    "analyze:finish": "npm run build && node dist/scripts/analyze-finish.js",
+    "compare:stall": "npm run build && node dist/scripts/compare-stall-rule.js"
   },
   "engines": {
     "node": ">=20"

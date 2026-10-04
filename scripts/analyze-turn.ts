@@ -14,8 +14,8 @@
  * The controls come from the replay; nothing is steered by this tool.
  */
 import { decodeControls } from "../src/evolution/Evaluator.js";
-import { createEvolutionConfig, progressMetric } from "../src/evolution/EvolutionConfig.js";
-import { computeFitness, ProgressTracker, RoadProgressTracker } from "../src/evolution/Fitness.js";
+import { createEvolutionConfig, progressMetric, stallRule } from "../src/evolution/EvolutionConfig.js";
+import { computeFitness, ProgressTracker, RoadProgressTracker, StallDetector } from "../src/evolution/Fitness.js";
 import { loadReplay, type Replay } from "../src/evolution/Replay.js";
 import { RoadObservationEncoder } from "../src/environment/RoadObservation.js";
 import { loadCapturedGameData, loadCapturedInit, loadCapturedTrack } from "../src/polytrack/local/capture.js";
@@ -55,18 +55,24 @@ async function main(): Promise<void> {
   const road = PolyTrackRoad.cached(track, gameData, init, model);
   const encoder = new RoadObservationEncoder(road, model, { lookahead: [25, 50, 100] });
   const episode = replay.episode;
-  const oldMeter = new ProgressTracker(model, episode.stallEpsilon);
-  const newMeter = new RoadProgressTracker(road, model.checkpointCount, episode.stallEpsilon);
+  const oldMeter = new ProgressTracker(model);
+  const newMeter = new RoadProgressTracker(road, model.checkpointCount);
+  // The replay's own stall rule, and the corrected one, both on road-v2 progress.
+  const recordedStall = new StallDetector(stallRule(episode), episode.stallTicks, episode.stallEpsilon);
+  const windowStall = new StallDetector("window-v2", episode.stallTicks, episode.stallEpsilon);
 
   const polytrack = new LocalPolyTrack({ init, gameData });
   await polytrack.connect(track);
   const spawn = await polytrack.reset();
   oldMeter.update(0, 0, false, spawn.position);
   newMeter.update(0, 0, false, spawn.position);
+  recordedStall.update(0, newMeter.best);
+  windowStall.update(0, newMeter.best);
   const rows: Row[] = [];
   let ticks = 0;
   let passedAt: number | null = null;
   let newStallTick: number | null = null;
+  let windowStallTick: number | null = null;
   for (let decision = 0; decision < replay.controls.length; decision++) {
     const c = decodeControls(replay.controls[decision]!);
     polytrack.setControls({ up: c.accelerate, down: c.brake, left: c.steerLeft, right: c.steerRight, reset: false });
@@ -75,7 +81,10 @@ async function main(): Promise<void> {
     const finished = s.finishFrames !== null;
     oldMeter.update(ticks, s.nextCheckpointIndex, finished, s.position);
     newMeter.update(ticks, s.nextCheckpointIndex, finished, s.position);
-    if (newStallTick === null && newMeter.ticksSinceImprovement(ticks) >= episode.stallTicks) newStallTick = ticks;
+    recordedStall.update(ticks, newMeter.best);
+    windowStall.update(ticks, newMeter.best);
+    if (newStallTick === null && recordedStall.stalled(ticks)) newStallTick = ticks;
+    if (windowStallTick === null && windowStall.stalled(ticks)) windowStallTick = ticks;
     if (passedAt === null && s.nextCheckpointIndex >= targetCheckpoint) passedAt = ticks;
     if (ticks % every !== 0) continue;
     const state = toVehicleState(s, polytrack, model.checkpointCount, episode.crashPolicy);
@@ -134,7 +143,7 @@ async function main(): Promise<void> {
   console.log(`\nProgress metric used when this replay was trained: ${progressMetric({ fitness: replay.fitnessSettings })}`);
   console.log(`gates-v1 (straight line to next gate): progress ${oldMeter.best.toFixed(3)} → fitness ${computeFitness(oldStats, fitnessSettings, episode).toFixed(1)}`);
   console.log(`road-v2 (distance along the road):     progress ${newMeter.best.toFixed(3)} (furthest road distance ${newMeter.roadDistance.toFixed(1)} m) → fitness ${computeFitness(newStats, fitnessSettings, episode).toFixed(1)}`);
-  console.log(`road-v2 progress last improved at tick ${ticks - newMeter.ticksSinceImprovement(ticks)}; under road-v2 the stall rule (${episode.stallTicks} ticks) would have ended the episode at tick ${newStallTick ?? "— (not reached)"} (the replay ran to ${ticks}).`);
+  console.log(`On road-v2 progress, the replay's stall rule (${stallRule(episode)}, ${episode.stallTicks} ticks) would have ended the episode at tick ${newStallTick ?? "— (not reached)"}; the window-v2 rule at tick ${windowStallTick ?? "— (not reached)"} (the replay ran to ${ticks}).`);
 }
 
 main().catch((err: unknown) => {
