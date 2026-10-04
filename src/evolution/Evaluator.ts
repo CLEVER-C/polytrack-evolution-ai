@@ -19,7 +19,7 @@ import { toVehicleState } from "../polytrack/PolyTrackBackend.js";
 import { PolyTrackRoad } from "../polytrack/track/PolyTrackRoad.js";
 import { PolyTrackTrack } from "../polytrack/track/PolyTrackTrack.js";
 import { observationVersion, progressMetric, type EvolutionConfig } from "./EvolutionConfig.js";
-import { computeFitness, ProgressTracker, RoadProgressTracker, type ProgressMeter } from "./Fitness.js";
+import { computeFitness, createStallDetector, ProgressTracker, RoadProgressTracker, type ProgressMeter } from "./Fitness.js";
 import type { EpisodeStats, TerminationReason } from "./Individual.js";
 
 export interface EvaluatorDependencies {
@@ -69,10 +69,11 @@ export class EpisodeEvaluator {
     private readonly options: EvaluatorOptions = {},
   ) {
     this.trackModel = new PolyTrackTrack(deps.track, deps.gameData).toTrackModel();
-    const roadObservation = observationVersion(config) === "road-v2";
+    const observation = observationVersion(config);
+    const roadObservation = observation !== "gates-v1";
     this.road = roadObservation || progressMetric(config) === "road-v2" ? PolyTrackRoad.cached(deps.track, deps.gameData, deps.init, this.trackModel) : null;
     this.encoder = roadObservation
-      ? new RoadObservationEncoder(this.road!, this.trackModel, { lookahead: config.network.roadLookahead! })
+      ? new RoadObservationEncoder(this.road!, this.trackModel, { lookahead: config.network.roadLookahead!, features: observation })
       : new TrackObservationEncoder(this.trackModel, { lookaheadGates: config.network.lookaheadGates });
     this.architecture = drivingArchitecture(this.encoder.size, config.network.hiddenLayers);
   }
@@ -100,9 +101,11 @@ export class EpisodeEvaluator {
       const spawn = await polytrack.reset();
       const tracker: ProgressMeter =
         this.road !== null && progressMetric(this.config) === "road-v2"
-          ? new RoadProgressTracker(this.road, model.checkpointCount, episode.stallEpsilon)
-          : new ProgressTracker(model, episode.stallEpsilon);
+          ? new RoadProgressTracker(this.road, model.checkpointCount)
+          : new ProgressTracker(model);
+      const stall = createStallDetector(episode);
       tracker.update(0, 0, false, spawn.position);
+      stall.update(0, tracker.best);
       let controls = "";
       let ticks = 0;
       let distanceDriven = 0;
@@ -122,9 +125,10 @@ export class EpisodeEvaluator {
         maxSpeedKmh = Math.max(maxSpeedKmh, s.speedKmh);
         const finished = s.finishFrames !== null;
         tracker.update(ticks, s.nextCheckpointIndex, finished, s.position);
+        stall.update(ticks, tracker.best);
         if (finished) reason = "finished";
         else if (polytrack.hasCrashed(episode.crashPolicy)) reason = "crashed";
-        else if (tracker.ticksSinceImprovement(ticks) >= episode.stallTicks) reason = "stalled";
+        else if (stall.stalled(ticks)) reason = "stalled";
         else if (ticks >= episode.maxTicks) reason = "maxTicks";
       }
 

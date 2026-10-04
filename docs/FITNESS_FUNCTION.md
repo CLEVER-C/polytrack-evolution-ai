@@ -50,8 +50,46 @@ fraction from how close the car has got to the next one.
 | --- | --- | --- |
 | `finished` | physics reports `finishFrames` | none (time bonus instead) |
 | `crashed` | crash policy: upside-down > 1000 ticks or no wheel contact > 5000 ticks | `crashPenalty` |
-| `stalled` | `progress` has not improved by ≥ 0.001 gate for 3000 ticks | `crashPenalty` |
+| `stalled` | `progress` has not improved by more than 0.001 gate over the last 3000 ticks (stall rule below) | `crashPenalty` |
 | `maxTicks` | episode reached `maxTicks` | none |
+
+### Stall rule (`episode.stallRule`, `StallDetector` in `src/evolution/Fitness.ts`)
+
+The detector sees only the episode's **best** progress so far (`ProgressMeter.best`), recorded after
+every decision together with the physics tick. Driving backwards never raises the best, so it is never
+progress.
+
+**`"window-v2"`** (default since step 11):
+
+```text
+stalled at tick t   ⇔   t ≥ stallTicks   and   best(t) − best(t − stallTicks) ≤ stallEpsilon
+```
+
+`best(t − stallTicks)` is the value recorded at the latest update at or before tick `t − stallTicks`
+(a queue of `(tick, best)` pairs, trimmed as the window moves). With the defaults, a car is stalled
+when its progress grew by no more than 0.001 gate over the last 3 s. The rule is defined in physics
+ticks, so it does not depend on `ticksPerStep` (tested with 1–50 ticks per decision) or on the
+number of workers (each episode is evaluated independently; tested with 0 and 3 workers).
+
+| Progress over time | window-v2 |
+| --- | --- |
+| standing still | stalled at exactly 3.000 s |
+| normal driving | never stalled |
+| slow but steady, 0.0004 gate/s (0.0012 per 3 s) | not stalled (per-step-v1: stalled at 3 s) |
+| 0.0003 gate/s (0.0009 per 3 s) | stalled at 3 s |
+| drives, then stops at time T | stalled at T + 3 s |
+| drives, then reverses from time T | stalled at T + 3 s (reversing is not progress) |
+
+**`"per-step-v1"`** (configs without `stallRule`, i.e. every run before step 11): stalled when no
+single decision raised the best by more than `stallEpsilon` for `stallTicks`. This was the
+implementation up to step 10, and did not match the rule documented above: a car gaining less than
+0.001 gate per 10 ms decision (slower than `0.1 × section length` m/s: 51, 135, 114 and 189 km/h on
+Summer 1's four sections) counted as stalled while driving steadily forward. It is kept so that
+earlier runs, checkpoints and replays reproduce exactly; resuming an old run keeps its rule.
+
+`npm run compare:stall -- --run <run> --generations 10,25` re-evaluates saved generation bests (their
+own network and settings) under both rules. Results for the step-10 run:
+[TRAINING_RESULTS.md](TRAINING_RESULTS.md#stall-rule-fix-re-evaluating-step-10s-bests).
 
 ## Why it looks like this
 
@@ -81,10 +119,9 @@ fraction from how close the car has got to the next one.
 
 ## Known limitations / possible exploits
 
-**Known issue (found in step 10, not yet fixed):** the stall rule is implemented per decision. A single
-10 ms update must beat the best progress by `stallEpsilon`, rather than progress improving by that much within
-`stallTicks`. Steady forward driving slower than `0.1 × section length` m/s (189 km/h on Summer 1's last section)
-therefore counts as stalled after 3 s. Details: [TRAINING_RESULTS.md](TRAINING_RESULTS.md#road-aware-100-generation-experiment).
+**Fixed in step 11:** up to step 10 the stall rule was implemented per decision (a single 10 ms update had to
+beat the best progress by `stallEpsilon`), so steady forward driving below `0.1 × section length` m/s counted as
+stalled. New runs use `stallRule: "window-v2"` (above); older runs keep `"per-step-v1"`.
 
 **Confirmed in the 100-generation baseline (gates-v1):** after passing checkpoint 2 on Summer 1 the
 best driver braked, stopped and **reversed**; reversing brought it slightly closer to checkpoint 3

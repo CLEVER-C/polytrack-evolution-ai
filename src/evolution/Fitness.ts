@@ -24,7 +24,7 @@ import { distance } from "../environment/math.js";
 import type { RoadGeometry } from "../environment/RoadGeometry.js";
 import type { TrackModel } from "../environment/track.js";
 import type { Vec3 } from "../environment/types.js";
-import type { EpisodeSettings, FitnessSettings } from "./EvolutionConfig.js";
+import { stallRule, type EpisodeSettings, type FitnessSettings, type StallRule } from "./EvolutionConfig.js";
 import type { EpisodeStats } from "./Individual.js";
 
 /** Fractional progress never reaches the next integer until the physics registers the gate. */
@@ -44,35 +44,25 @@ export function trackProgress(track: TrackModel, checkpointsPassed: number, fini
   return c + Math.min(MAX_FRACTION, Math.max(0, 1 - d / segment));
 }
 
-/** Tracks an episode's best progress (gate units) and when it last improved (for stall detection). */
+/** Tracks an episode's best progress (gate units). Stall detection is separate (StallDetector). */
 export interface ProgressMeter {
   update(tick: number, checkpointsPassed: number, finished: boolean, position: Vec3): void;
   readonly best: number;
-  ticksSinceImprovement(tick: number): number;
 }
 
 /** "gates-v1": straight-line distance to the next gate. */
 export class ProgressTracker implements ProgressMeter {
   private bestProgress = 0;
-  private lastImprovementTick = 0;
 
-  constructor(
-    private readonly track: TrackModel,
-    private readonly stallEpsilon: number,
-  ) {}
+  constructor(private readonly track: TrackModel) {}
 
-  update(tick: number, checkpointsPassed: number, finished: boolean, position: Vec3): void {
+  update(_tick: number, checkpointsPassed: number, finished: boolean, position: Vec3): void {
     const p = trackProgress(this.track, checkpointsPassed, finished, position);
-    if (p > this.bestProgress + this.stallEpsilon) this.lastImprovementTick = tick;
     if (p > this.bestProgress) this.bestProgress = p;
   }
 
   get best(): number {
     return this.bestProgress;
-  }
-
-  ticksSinceImprovement(tick: number): number {
-    return tick - this.lastImprovementTick;
   }
 }
 
@@ -95,7 +85,6 @@ export class ProgressTracker implements ProgressMeter {
 export class RoadProgressTracker implements ProgressMeter {
   private bestProgress = 0;
   private bestS = 0;
-  private lastImprovementTick = 0;
   private lastCountedPosition: Vec3 | null = null;
   private movedSinceCounted = 0;
   private lastPosition: Vec3 | null = null;
@@ -104,10 +93,9 @@ export class RoadProgressTracker implements ProgressMeter {
   constructor(
     private readonly road: RoadGeometry,
     private readonly checkpointCount: number,
-    private readonly stallEpsilon: number,
   ) {}
 
-  update(tick: number, checkpointsPassed: number, finished: boolean, position: Vec3): void {
+  update(_tick: number, checkpointsPassed: number, finished: boolean, position: Vec3): void {
     if (this.lastPosition !== null) this.movedSinceCounted += distance(this.lastPosition, position);
     this.lastPosition = position;
     let p: number;
@@ -128,7 +116,6 @@ export class RoadProgressTracker implements ProgressMeter {
         p = checkpointsPassed + Math.min(MAX_FRACTION, Math.max(0, (projection.s - section.startS) / span));
       }
     }
-    if (p > this.bestProgress + this.stallEpsilon) this.lastImprovementTick = tick;
     if (p > this.bestProgress) this.bestProgress = p;
   }
 
@@ -140,10 +127,64 @@ export class RoadProgressTracker implements ProgressMeter {
   get roadDistance(): number {
     return this.bestS;
   }
+}
 
-  ticksSinceImprovement(tick: number): number {
-    return tick - this.lastImprovementTick;
+/**
+ * Stall detection: decides from the best progress (ProgressMeter.best, so
+ * driving backwards never counts as progress) whether the episode should end.
+ *
+ * "window-v2" (default): stalled at tick t (t >= windowTicks) when
+ *     best(t) - best(t - windowTicks) <= epsilon
+ * i.e. progress did not improve by more than `epsilon` gate units over the
+ * last `windowTicks` physics ticks. best(t - windowTicks) is the value
+ * recorded at the latest update at or before that tick, so the rule is
+ * defined in physics ticks, not in decisions or frames.
+ *
+ * "per-step-v1" (configs from before stall-rule versions): stalled when no
+ * single update raised the best by more than `epsilon` for `windowTicks`.
+ * This is what the code did up to step 10: a car gaining less than epsilon
+ * per 10 ms decision counted as stalled even while driving steadily forward.
+ * Kept so earlier runs and replays reproduce exactly.
+ */
+export class StallDetector {
+  private readonly history: { tick: number; best: number }[] = [];
+  private head = 0;
+  private lastBest = -Infinity;
+  private lastImprovementTick = 0;
+
+  constructor(
+    readonly rule: StallRule,
+    readonly windowTicks: number,
+    readonly epsilon: number,
+  ) {}
+
+  /** Records the best progress after the update at `tick` (ticks must not decrease). */
+  update(tick: number, best: number): void {
+    if (this.rule === "per-step-v1") {
+      if (this.lastBest === -Infinity || best > this.lastBest + this.epsilon) this.lastImprovementTick = tick;
+      this.lastBest = Math.max(this.lastBest, best);
+      return;
+    }
+    this.history.push({ tick, best });
+    // Keep the newest entry at or before (tick - window) as the window start, and everything after it.
+    while (this.head + 1 < this.history.length && this.history[this.head + 1]!.tick <= tick - this.windowTicks) this.head++;
+    if (this.head > 1024) {
+      this.history.splice(0, this.head);
+      this.head = 0;
+    }
   }
+
+  stalled(tick: number): boolean {
+    if (this.rule === "per-step-v1") return tick - this.lastImprovementTick >= this.windowTicks;
+    const start = this.history[this.head];
+    const last = this.history[this.history.length - 1];
+    if (start === undefined || last === undefined || start.tick > tick - this.windowTicks) return false;
+    return last.best - start.best <= this.epsilon;
+  }
+}
+
+export function createStallDetector(episode: Pick<EpisodeSettings, "stallRule" | "stallTicks" | "stallEpsilon">): StallDetector {
+  return new StallDetector(stallRule(episode), episode.stallTicks, episode.stallEpsilon);
 }
 
 export function computeFitness(stats: EpisodeStats, fitness: FitnessSettings, episode: Pick<EpisodeSettings, "maxTicks">): number {

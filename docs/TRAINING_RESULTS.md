@@ -482,3 +482,135 @@ What the network gets at the decisive moment (29.0–30.1 s, from the diagnostic
 - **Verdict:** enough to align at moderate speed, but it gives no direct cue that speed must drop for a narrowing.
 
 Nothing was redesigned in this step.
+
+## Step 11: finish-chute perception and the stall-rule fix
+
+Step 10's best driver reached Summer 1's finish chute (60 m → 14 m wide, s ≈ 1,294–1,330 m) at
+302 km/h and hit its side. Two changes, nothing else
+([ROAD_AWARE_OBSERVATIONS.md](ROAD_AWARE_OBSERVATIONS.md#road-v3-width-ahead-finish-distance-time-to-reach-networkobservation-road-v3-default-since-step-11),
+[FITNESS_FUNCTION.md](FITNESS_FUNCTION.md#stall-rule-episodestallrule-stalldetector-in-srcevolutionfitnessts)):
+
+- **Stall rule `window-v2`:** stalled when best progress grew by ≤ 0.001 gate over the last 3,000
+  ticks, as documented (the old code required that gain within one 10 ms decision).
+- **Observation `road-v3`:** the 64 road-v2 features, plus road width and the distances from the car's
+  line to both edges at each of the 6 lookahead points, width change over 10/25/50 m, distance to the
+  finish, and time to reach 50/120 m: 88 inputs. Lookahead points past the finish describe the finish
+  line instead of zeros.
+
+Unchanged: hidden layers 24 → 24, mutation, selection, population, progress metric (road-v2), physics.
+
+### Stall-rule fix: re-evaluating step 10's bests
+
+`npm run compare:stall -- --run road-v2-g100-summer1-seed12345 --generations 10,25,50,99`: each saved
+best re-driven by its own network with its own settings (road-v2 observation), once per rule, twice
+each.
+
+| Best of generation | Rule | Ended | At | Road distance | Fitness |
+| --- | --- | --- | --- | --- | --- |
+| 10 (g0007-009) | per-step-v1 (recorded) | stalled | 18.72 s | 480 m | 1,844.2 |
+| | window-v2 | stalled | 21.18 s | 480 m | 1,844.2 |
+| 25 (g0023-062) | per-step-v1 (recorded) | stalled | 23.17 s | 876 m | 3,023.9 |
+| | window-v2 | stalled | 26.91 s | **897 m** | **3,064.8** |
+| 50 (g0041-030) | per-step-v1 (recorded) | stalled | 27.37 s | 932 m | 3,131.5 |
+| | window-v2 | stalled | 28.84 s | 932 m | 3,131.5 |
+| 99 (g0055-034) | per-step-v1 (recorded) | stalled | 33.10 s | 1,322 m | 3,875.5 |
+| | window-v2 | stalled | 33.10 s | 1,322 m | 3,875.5 |
+
+- **Continuous forward motion is no longer cut short.** Generation 25's best had been ended while
+  sliding forward through checkpoint 3; under window-v2 it drives 3.7 s longer and 21 m further.
+- **Stalled cars still stop.** Generation 10's best (scraping the wall) runs 2.5 s longer and gains
+  nothing; it ends exactly 3 s after its last real gain. Generation 99's best is wedged at the chute
+  entrance: same tick under both rules.
+- **Deterministic:** every evaluation repeated identically; under per-step-v1 each re-drive reproduces
+  the recorded controls exactly.
+
+### The new observations on step 10's best driver
+
+`npm run analyze:finish -- --run road-v2-g100-summer1-seed12345 --generation 99 --last 9` (the table
+is in ROAD_AWARE_OBSERVATIONS.md). Summary:
+
+- **Narrowing road:** the 170 m lookahead width falls from 56 m to 40 m at 27.75 s and reads 14 m from
+  28.0 s, 2.3 s and ~160 m before impact. The road at the car is still 55 m wide then.
+- **Width change:** widthChange50 is −0.72 at 29.5 s and −0.90 at 29.75 s.
+- **Future edge distances:** at 29.75 s the car's line is 3 m from the right edge 50 and 80 m ahead.
+- **Distance to finish:** 221 m → 41 m over the approach.
+- **Final road direction:** the lookahead points past the finish show the finish line, heading +22° to
+  +32° relative to the car (the chute's jog), instead of zeros.
+
+All of it is there before the car reaches the narrowing. That car still never braked.
+
+### 20-generation experiment (road-v3 + window-v2)
+
+```bash
+npm.cmd run train -- --generations 20 --population 100 --track "Summer 1" --seed 12345 --workers 6 --run finish-v1-g20-summer1-seed12345
+```
+
+Run: `data/runs/finish-v1-g20-summer1-seed12345/`.
+- Runtime and speed: 2 min 40 s, 98–116k ticks/s.
+- Generations take longer than in step 9 (4–11 s vs 4–8 s): fewer cars are cut off by the old stall rule.
+
+| | road-v2, step 9 (g20) | road-v3 + window-v2 (g20) |
+| --- | --- | --- |
+| Best fitness (generation 19) | 2,938.6 | 2,168.1 |
+| Median fitness (generation 19) | 1,034.9 | 1,156.5 |
+| Average fitness (generation 19) | 916.4 | 1,062.1 |
+| First checkpoint 1 / 2 | generation 1 / 16 | generation 2 / 13 |
+| Best road distance | 833 m (checkpoint-3 entrance) | 589 m (first bend of the U-turn) |
+| Checkpoint 3 / finish | no / no | no / no |
+| Stalled / crashed (generation 19) | 78 / 22 | 89 / 11 |
+
+Progression of the generation bests (re-simulated, `best-progression.csv`):
+
+| Generation | Best road distance | How it ended |
+| --- | --- | --- |
+| 0 | 97 m | crashed before checkpoint 1 |
+| 2 | 399 m | checkpoint 1, stalled at 428 m |
+| 5 | 481 m | stalled at 455 m |
+| 10 | 503 m | stalled at 536 m (fell off the ramp) |
+| 13 | 538 m | checkpoint 2, stalled |
+| 14–19 | 589 m | checkpoint 2, off the U-turn's outer bank at ~190 km/h |
+
+Scope: no car reached the U-turn exit, checkpoint 3, the jump or the finish chute within 20 generations.
+
+### Final approach, inspected (viewer + `analyze:turn`)
+
+| Generation | Best | What it does (viewer) |
+| --- | --- | --- |
+| 10 | g0010-021 (1,904.1) | Checkpoint 1, then full speed (up to 269 km/h) along the second section. It leaves the left side of the ramp before checkpoint 2 at 156 km/h and falls to the ground below. |
+| 15 | g0014-053 (2,168.1) | Passes checkpoint 2 at 170 km/h without braking and accelerates to 201 km/h into the U-turn. It climbs the banked outer wall at 193 km/h (lateral offset −11 → −53 m) and goes over its top edge. It lands on the grass outside and stalls at 21.0 s. |
+| 19 | same car as 15 | Identical replay (the all-time best has not changed since generation 14). |
+
+The step-11 questions about the finish chute (braking before the chute, steering timing, lateral
+position, speed entering the narrowing, recognising it earlier, reaching the finish) **cannot be
+answered from this run**: no individual got within 700 m of the chute. Step 10 needed 55 generations
+to get there.
+
+### Comparison with step 10's generation-99 behaviour
+
+| | Step 10, generation 99 (road-v2) | Step 11, generation 19 (road-v3) |
+| --- | --- | --- |
+| Speed entering the chute | 302 km/h | — (did not reach it) |
+| Braking point | none | — (no braking before the U-turn either) |
+| Lateral position | +7.3 m, drifting right into the narrowing | — |
+| Furthest road distance | 1,322 m | 589 m |
+| Finish | no | no |
+
+### What the experiment shows, and what it does not
+
+- **Perception (finish chute): the information is now there.** The analyze:finish replay shows the
+  narrowing, the distance to it, the remaining width from the car's line and the distance to the
+  finish, all well before impact. Speed and road direction ahead were already inputs.
+- **Whether the network can use it: not tested yet.** A 20-generation run from scratch does not reach
+  the chute, so it cannot show whether evolution finds a safer approach.
+- **Why this run is shorter than step 9's: not attributable to the new inputs.** Same seed, but the
+  network has 88 inputs instead of 64, so every initial weight differs and the run follows a different
+  random path. One seed and 20 generations do not separate the observation change from that.
+  Generation 19's median and average fitness are higher than step 9's; its best is lower.
+- **Bottleneck classification.** For the finish chute, perception is no longer the limiting factor
+  according to the diagnostic. The "CONTROL" verdict of item 17 needs a driver that reaches the chute
+  and still fails with this information, and none did. For this run, the limit is **EVOLUTION**: the
+  search had 20 generations to repeat what took step 10 55. Bringing over step 10's evolved weights
+  (padding the new inputs with zero weights) would be a way to test the chute quickly. It would seed
+  from an earlier run, which this step did not allow, so it was not done.
+
+Finishes: **0**. No finish time.

@@ -11,24 +11,44 @@
  * located on the road within the section leading to its next checkpoint, so
  * a road passing nearby but further along the route is never mistaken for
  * the car's position. Feature list and normalization: docs/ROAD_AWARE_OBSERVATIONS.md.
+ *
+ * Two feature sets: "road-v2" (64 features with the default lookahead) and
+ * "road-v3" = the same 64 plus road width and edge distances at every
+ * lookahead point, width change ahead, distance to the finish and time to
+ * reach two lookahead distances. In road-v3 a lookahead point past the finish
+ * describes the last real road sample (the finish line) instead of zeros.
  */
 import { dot, length, rotate, signedYawAngle, sub, vec } from "./math.js";
 import type { RoadGeometry, RoadProjection } from "./RoadGeometry.js";
 import type { TrackModel } from "./track.js";
 import type { Observation, ObservationEncoder, Vec3, VehicleState } from "./types.js";
 
+export type RoadFeatureSet = "road-v2" | "road-v3";
+
 export interface RoadObservationOptions {
   /** Distances ahead along the road (m) at which the road is described. */
   readonly lookahead: readonly number[];
+  /** Absent = "road-v2". */
+  readonly features?: RoadFeatureSet;
 }
 
 /** Chosen from Summer 1's measured geometry: see docs/ROAD_AWARE_OBSERVATIONS.md §Lookahead. */
 export const DEFAULT_ROAD_LOOKAHEAD: readonly number[] = [10, 25, 50, 80, 120, 170];
+/** road-v3: distances (m) over which the change in road width is reported. */
+export const ROAD_V3_WIDTH_CHANGE: readonly number[] = [10, 25, 50];
+/** road-v3: distances (m) for which the time to get there at the current along-road speed is reported. */
+export const ROAD_V3_TIME_TO_REACH: readonly number[] = [50, 120];
 
 export interface RoadLookahead {
   readonly distance: number;
   /** False beyond the end of the road (after the finish). */
   readonly present: boolean;
+  /** Road distance actually described (≤ the road length; the finish line for points beyond it). */
+  readonly s: number;
+  /** Road width there, and the distance from the car's current lateral offset to each edge there (m; negative = outside). */
+  readonly width: number;
+  readonly toEdgeLeft: number;
+  readonly toEdgeRight: number;
   /** Road direction there relative to the car's heading, radians; + = to the right. */
   readonly heading: number;
   /** That road point in the car frame: x right, y up, z forward (m). */
@@ -67,6 +87,8 @@ export interface RoadObservation {
   /** Velocity along / across (+ right) the road, m/s. */
   readonly alongRoadSpeed: number;
   readonly acrossRoadSpeed: number;
+  /** Road distance from the car's projection to the finish line, m. */
+  readonly distanceToFinish: number;
   readonly lookahead: readonly RoadLookahead[];
 }
 
@@ -91,13 +113,21 @@ export function observeRoad(state: VehicleState, road: RoadGeometry, track: Trac
   const section = road.section(passed);
   const projection = road.project(position, Math.max(0, section.startS - 20), section.endS + 5);
   const here = road.samples[projection.index]!;
+  const clampToEnd = options.features === "road-v3";
   const lookahead = options.lookahead.map((d): RoadLookahead => {
-    const s = projection.s + d;
-    if (s > road.length) return { distance: d, present: false, heading: 0, relative: vec(0, 0, 0), curvature: 0, bank: 0, pitch: 0 };
+    const target = projection.s + d;
+    const present = target <= road.length;
+    if (!present && !clampToEnd) return { distance: d, present: false, s: road.length, width: 0, toEdgeLeft: 0, toEdgeRight: 0, heading: 0, relative: vec(0, 0, 0), curvature: 0, bank: 0, pitch: 0 };
+    // Past the end (road-v3): the last real sample, i.e. the finish line. Nothing beyond it is extrapolated.
+    const s = Math.min(target, road.length);
     const at = road.sampleAt(s);
     return {
       distance: d,
-      present: true,
+      present,
+      s,
+      width: at.edgeLeft + at.edgeRight,
+      toEdgeLeft: at.edgeLeft + projection.lateral,
+      toEdgeRight: at.edgeRight - projection.lateral,
       heading: signedYawAngle(forward, at.tangent, road.up),
       relative: toCar(sub(at.position, position)),
       curvature: at.curvature,
@@ -130,12 +160,15 @@ export function observeRoad(state: VehicleState, road: RoadGeometry, track: Trac
     roadBank: here.bank,
     alongRoadSpeed: dot(velocity, here.tangent),
     acrossRoadSpeed: dot(velocity, here.right),
+    distanceToFinish: Math.max(0, road.length - projection.s),
     lookahead,
   };
 }
 
 /** Values are divided by these, then squashed with tanh into (−1, 1). */
-const SCALE = { speed: 50, crossSpeed: 20, lateral: 10, width: 30, edge: 10, height: 5, distance: 200, curvature: 0.05, ahead: 50, aheadHeight: 10 } as const;
+const SCALE = { speed: 50, crossSpeed: 20, lateral: 10, width: 30, edge: 10, height: 5, distance: 200, curvature: 0.05, ahead: 50, aheadHeight: 10, time: 2 } as const;
+/** Along-road speeds below this (m/s) count as not approaching (time to reach = infinite). */
+const MIN_APPROACH_SPEED = 0.5;
 const squash = (v: number, s: number): number => Math.tanh(v / s);
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 
@@ -151,6 +184,7 @@ export class RoadObservationEncoder implements ObservationEncoder {
   }
 
   static featureNames(options: RoadObservationOptions = { lookahead: DEFAULT_ROAD_LOOKAHEAD }): string[] {
+    const v3 = options.features === "road-v3";
     const names = [
       // car
       "forwardSpeed", "lateralSpeed", "verticalSpeed", "speed", "uprightness", "forwardPitch", "rightRoll", "wheelsInContact", "airborne", "finished",
@@ -161,6 +195,12 @@ export class RoadObservationEncoder implements ObservationEncoder {
       "heightAboveRoad", "roadPitch", "roadBank", "roadCurvature", "alongRoadSpeed", "acrossRoadSpeed",
     ];
     for (const d of options.lookahead) names.push(`ahead${d}.present`, `ahead${d}.heading`, `ahead${d}.right`, `ahead${d}.up`, `ahead${d}.curvature`, `ahead${d}.bank`);
+    if (v3) {
+      for (const d of options.lookahead) names.push(`ahead${d}.width`, `ahead${d}.toEdgeLeft`, `ahead${d}.toEdgeRight`);
+      for (const d of ROAD_V3_WIDTH_CHANGE) names.push(`widthChange${d}`);
+      names.push("distanceToFinish");
+      for (const d of ROAD_V3_TIME_TO_REACH) names.push(`timeToReach${d}`);
+    }
     return names;
   }
 
@@ -205,10 +245,34 @@ export class RoadObservationEncoder implements ObservationEncoder {
       squash(o.alongRoadSpeed, SCALE.speed),
       squash(o.acrossRoadSpeed, SCALE.crossSpeed),
     ];
+    const v3 = this.options.features === "road-v3";
     for (const a of o.lookahead) {
-      if (!a.present) f.push(0, 0, 0, 0, 0, 0);
-      else f.push(1, a.heading / Math.PI, squash(a.relative.x, SCALE.ahead), squash(a.relative.y, SCALE.aheadHeight), squash(a.curvature, SCALE.curvature), a.bank);
+      if (!a.present && !v3) f.push(0, 0, 0, 0, 0, 0);
+      else f.push(a.present ? 1 : 0, a.heading / Math.PI, squash(a.relative.x, SCALE.ahead), squash(a.relative.y, SCALE.aheadHeight), squash(a.curvature, SCALE.curvature), a.bank);
+    }
+    if (v3) {
+      for (const a of o.lookahead) f.push(squash(a.width, SCALE.width), squash(a.toEdgeLeft, SCALE.edge), squash(a.toEdgeRight, SCALE.edge));
+      // ln(width ahead / width here): 0 = constant, < 0 = narrowing (ln(14/60) ≈ −1.45), > 0 = widening; then tanh.
+      for (const d of ROAD_V3_WIDTH_CHANGE) f.push(widthChange(this.road, p.s, d));
+      f.push(squash(o.distanceToFinish, SCALE.distance));
+      // 1 − tanh(t / 2 s), t = distance / along-road speed: 0 when stopped or reversing, → 1 when about to arrive.
+      for (const d of ROAD_V3_TIME_TO_REACH) {
+        const dist = Math.min(d, o.distanceToFinish);
+        f.push(o.alongRoadSpeed > MIN_APPROACH_SPEED ? 1 - Math.tanh(dist / o.alongRoadSpeed / SCALE.time) : 0);
+      }
     }
     return { features: f, state };
   }
+}
+
+/** Relative change in road width from distance s to s + d (clamped to the road), as tanh(ln(w_ahead / w_here)). */
+export function widthChange(road: RoadGeometry, s: number, d: number): number {
+  const width = (x: number): number => {
+    const at = road.sampleAt(Math.min(road.length, Math.max(0, x)));
+    return at.edgeLeft + at.edgeRight;
+  };
+  const here = width(s);
+  const ahead = width(s + d);
+  if (!(here > 0) || !(ahead > 0)) return 0;
+  return Math.tanh(Math.log(ahead / here));
 }
